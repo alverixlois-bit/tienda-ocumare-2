@@ -1,0 +1,176 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { HeaderCatalogo } from "@/components/catalogo/HeaderCatalogo";
+import { ProductCard } from "@/components/catalogo/ProductCard";
+import { VideoModal } from "@/components/catalogo/VideoModal";
+import { CartDrawer } from "@/components/catalogo/CartDrawer";
+import { CheckoutModal } from "@/components/catalogo/CheckoutModal";
+import { ProductoRow, CategoriaRow } from "@/types/database.types";
+import { createClient } from "@/lib/supabase/client";
+import { useCart } from "@/context/CartContext";
+import { Package, RefreshCw, Sparkles } from "lucide-react";
+
+export default function CatalogoPage() {
+  const [productos, setProductos] = useState<ProductoRow[]>([]);
+  const [categorias, setCategorias] = useState<CategoriaRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busqueda, setBusqueda] = useState("");
+  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState("all");
+
+  // Video Modal
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [activeVideo, setActiveVideo] = useState<{ url: string; titulo: string } | null>(null);
+
+  const { tasaBcv, setTasaBcv } = useCart();
+  const supabase = createClient();
+
+  useEffect(() => {
+    cargarDatosCatalogo();
+  }, []);
+
+  async function cargarDatosCatalogo() {
+    setLoading(true);
+    try {
+      const defaultTiendaId = process.env.NEXT_PUBLIC_TIENDA_ID || "11111111-1111-4111-8111-111111111111";
+
+      // 1. Cargar Tasa BCV de la tienda
+      const { data: tiendaData } = await supabase
+        .from("tiendas")
+        .select("tasa_bcv")
+        .eq("id", defaultTiendaId)
+        .maybeSingle();
+
+      if (tiendaData?.tasa_bcv) {
+        setTasaBcv(Number(tiendaData.tasa_bcv));
+      }
+
+      // 2. Cargar Categorías
+      const { data: catData } = await supabase
+        .from("categorias")
+        .select("*")
+        .eq("tienda_id", defaultTiendaId)
+        .order("orden", { ascending: true });
+
+      if (catData && catData.length > 0) {
+        setCategorias(catData);
+      }
+
+      // 3. Cargar Productos Activos
+      const { data: prodData, error } = await supabase
+        .from("productos")
+        .select("*")
+        .eq("tienda_id", defaultTiendaId)
+        .eq("activo", true)
+        .order("created_at", { ascending: false });
+
+      if (prodData && prodData.length > 0) {
+        setProductos(prodData);
+      } else {
+        // Fallback demo si aún no se han creado en DB
+        setProductos([]);
+      }
+
+      if (error) {
+        console.warn("Aviso al consultar catálogo:", error.message);
+      }
+    } catch (err) {
+      console.error("Error cargando catálogo:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleOpenVideo(url: string, titulo: string) {
+    setActiveVideo({ url, titulo });
+    setVideoModalOpen(true);
+  }
+
+  // Filtrado
+  const productosFiltrados = productos.filter((p) => {
+    const matchesSearch =
+      p.titulo.toLowerCase().includes(busqueda.toLowerCase()) ||
+      (p.descripcion && p.descripcion.toLowerCase().includes(busqueda.toLowerCase()));
+
+    const matchesCat =
+      categoriaSeleccionada === "all" || p.categoria_id === categoriaSeleccionada;
+
+    return matchesSearch && matchesCat;
+  });
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between">
+      {/* Header Catalogo */}
+      <HeaderCatalogo
+        categorias={categorias}
+        categoriaSeleccionada={categoriaSeleccionada}
+        onSelectCategoria={(catId) => setCategoriaSeleccionada(catId)}
+        busqueda={busqueda}
+        onBusquedaChange={(val) => setBusqueda(val)}
+      />
+
+      {/* Contenido Principal */}
+      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 flex-1">
+        {/* Banner de bienvenida al catálogo */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-900/40 via-cyan-900/30 to-slate-900 border border-slate-800 p-6 sm:p-8 mb-8 backdrop-blur">
+          <div className="max-w-2xl relative z-10">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 mb-3">
+              <Sparkles className="w-3.5 h-3.5" />
+              Catálogo Oficial por Encargo
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+              Compra tus productos con solo el 50% de abono
+            </h1>
+            <p className="mt-2 text-xs sm:text-sm text-slate-300">
+              Elige lo que necesitas, confirma tu pedido y paga el 50% inicial en Bolívares a tasa oficial BCV o en divisas. El saldo restante lo pagas el día de la entrega o despacho por Zoom/MRW.
+            </p>
+          </div>
+        </div>
+
+        {/* Grid de Productos */}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-24 text-slate-400">
+            <RefreshCw className="w-8 h-8 animate-spin mb-3 text-cyan-400" />
+            <p className="text-sm">Cargando catálogo en tiempo real...</p>
+          </div>
+        ) : productosFiltrados.length === 0 ? (
+          <div className="text-center py-20 px-4 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl">
+            <Package className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+            <h3 className="text-base font-semibold text-white">No hay productos en esta selección</h3>
+            <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+              {busqueda
+                ? "Prueba con otro término de búsqueda o selecciona otra categoría."
+                : "Pronto se agregarán nuevos productos a este catálogo."}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {productosFiltrados.map((prod) => (
+              <ProductCard
+                key={prod.id}
+                producto={prod}
+                tasaBcv={tasaBcv}
+                onOpenVideo={handleOpenVideo}
+              />
+            ))}
+          </div>
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="border-t border-slate-900 bg-slate-950 py-6 text-center text-xs text-slate-500">
+        <p>OcumareHub &copy; {new Date().getFullYear()} — Catálogo Virtual con Envíos a todo el país.</p>
+      </footer>
+
+      {/* Componentes Flotantes y Modales */}
+      <CartDrawer />
+      <CheckoutModal />
+      <VideoModal
+        isOpen={videoModalOpen}
+        onClose={() => setVideoModalOpen(false)}
+        videoUrl={activeVideo?.url || null}
+        titulo={activeVideo?.titulo || ""}
+      />
+    </div>
+  );
+}
