@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { DollarSign, Percent, Save, RefreshCw, Store, Phone, CheckCircle, Info } from "lucide-react";
+import { Percent, Save, RefreshCw, Store, Phone } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { formatoVES, formatoUSD } from "@/utils/currency";
+import { TasaBCVCard } from "./TasaBCVCard";
 
 interface StoreSettingsProps {
   onTasaUpdated?: (nuevaTasa: number) => void;
@@ -14,11 +14,10 @@ export function StoreSettingsTab({ onTasaUpdated, showToast }: StoreSettingsProp
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Estados de configuración
+  // Estados de configuración de la tienda
   const [tiendaId, setTiendaId] = useState<string>("");
   const [nombre, setNombre] = useState<string>("Mi Tienda Virtual");
   const [telefono, setTelefono] = useState<string>("+58 412 1234567");
-  const [tasaBcv, setTasaBcv] = useState<string>("52.50");
   const [modoOfertas, setModoOfertas] = useState<boolean>(false);
   const [permiteAbono, setPermiteAbono] = useState<boolean>(true);
 
@@ -34,27 +33,23 @@ export function StoreSettingsTab({ onTasaUpdated, showToast }: StoreSettingsProp
       const defaultTiendaId = process.env.NEXT_PUBLIC_TIENDA_ID || "11111111-1111-4111-8111-111111111111";
       setTiendaId(defaultTiendaId);
 
-      // 1. Cargar desde configuracion_tienda en Supabase
-      const { data: configData } = await supabase
-        .from("configuracion_tienda")
+      const savedOfertas = localStorage.getItem("ocumare_modo_ofertas");
+      if (savedOfertas !== null) {
+        setModoOfertas(savedOfertas === "true");
+      }
+
+      // Intentar cargar datos de tiendas si existen
+      const { data: tiendaData } = await supabase
+        .from("tiendas")
         .select("*")
-        .limit(1)
+        .eq("id", defaultTiendaId)
         .maybeSingle();
 
-      if (configData?.tasa_bcv) {
-        setTasaBcv(String(configData.tasa_bcv));
-        if (onTasaUpdated) onTasaUpdated(Number(configData.tasa_bcv));
-      } else {
-        // Fallback a localStorage si la tabla aún no tiene filas
-        const savedTasa = localStorage.getItem("ocumare_tasa_bcv");
-        const savedOfertas = localStorage.getItem("ocumare_modo_ofertas");
-        if (savedTasa) {
-          setTasaBcv(savedTasa);
-          if (onTasaUpdated) onTasaUpdated(Number(savedTasa));
-        }
-        if (savedOfertas !== null) {
-          setModoOfertas(savedOfertas === "true");
-        }
+      if (tiendaData) {
+        if (tiendaData.nombre) setNombre(tiendaData.nombre);
+        if (tiendaData.telefono) setTelefono(tiendaData.telefono);
+        if (typeof tiendaData.modo_ofertas === "boolean") setModoOfertas(tiendaData.modo_ofertas);
+        if (typeof tiendaData.permite_abono === "boolean") setPermiteAbono(tiendaData.permite_abono);
       }
     } catch (err) {
       console.error("Error al cargar configuración:", err);
@@ -63,49 +58,32 @@ export function StoreSettingsTab({ onTasaUpdated, showToast }: StoreSettingsProp
     }
   }
 
-  async function guardarConfiguracion(e: React.FormEvent) {
+  async function guardarAjustesComerciales(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    const tasaNumerica = parseFloat(tasaBcv);
-
-    if (isNaN(tasaNumerica) || tasaNumerica <= 0) {
-      showToast("La tasa BCV debe ser un número válido mayor a 0", "error");
-      setSaving(false);
-      return;
-    }
 
     try {
-      // 1. Guardar en configuracion_tienda
-      const { error: confError } = await supabase
-        .from("configuracion_tienda")
-        .upsert({
-          tasa_bcv: tasaNumerica,
-          updated_at: new Date().toISOString(),
-        });
-
-      // 2. Guardar en localStorage para disponibilidad instantánea en frontend
-      localStorage.setItem("ocumare_tasa_bcv", tasaBcv);
       localStorage.setItem("ocumare_modo_ofertas", String(modoOfertas));
 
-      if (onTasaUpdated) {
-        onTasaUpdated(tasaNumerica);
-      }
+      await supabase
+        .from("tiendas")
+        .update({
+          nombre,
+          telefono,
+          modo_ofertas: modoOfertas,
+          permite_abono: permiteAbono,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", tiendaId);
 
-      if (confError) {
-        console.warn("Aviso al guardar en Supabase (manteniendo en local):", confError.message);
-        showToast("Tasa BCV guardada localmente (aplica políticas RLS en Supabase si es necesario)", "info");
-      } else {
-        showToast("¡Tasa BCV guardada y sincronizada en Supabase!", "success");
-      }
+      showToast("Ajustes de tienda guardados con éxito", "success");
     } catch (err) {
-      console.error("Error al guardar:", err);
-      showToast("Guardado con éxito en la sesión actual", "success");
+      console.warn("Aviso guardando en tiendas:", err);
+      showToast("Configuración guardada en la sesión actual", "success");
     } finally {
       setSaving(false);
     }
   }
-
-  const tasaNum = parseFloat(tasaBcv) || 0;
 
   if (loading) {
     return (
@@ -118,93 +96,16 @@ export function StoreSettingsTab({ onTasaUpdated, showToast }: StoreSettingsProp
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
-      {/* Banner Informativo Tasa BCV */}
-      <div className="p-4 rounded-xl bg-gradient-to-r from-blue-950/40 via-slate-900 to-emerald-950/30 border border-blue-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold">
-            <DollarSign className="w-6 h-6" />
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold text-white">Tasa Oficial BCV Activa</h3>
-            <p className="text-xs text-slate-400">
-              Todos los precios del catálogo y órdenes se sincronizan con esta tasa
-            </p>
-          </div>
-        </div>
-        <div className="text-right">
-          <span className="text-2xl font-extrabold text-emerald-400">
-            Bs. {tasaNum > 0 ? tasaNum.toFixed(2) : "0.00"}
-          </span>
-          <span className="text-xs text-slate-400 block">por 1.00 USD</span>
-        </div>
-      </div>
+      {/* 1. MÓDULO PRINCIPAL: Tarjeta de Gestión y Actualización Diaria Tasa BCV */}
+      <TasaBCVCard onTasaUpdated={onTasaUpdated} showToast={showToast} />
 
-      <form onSubmit={guardarConfiguracion} className="space-y-6">
-        {/* Sección: Tasa de Cambio y Conversión */}
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 backdrop-blur">
-          <div className="flex items-center gap-2 mb-4">
-            <DollarSign className="w-5 h-5 text-emerald-400" />
-            <h2 className="text-lg font-bold text-white">Tasa de Cambio Oficial (BCV)</h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                Tasa BCV del día (VES / USD)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-3 text-slate-400 text-sm font-medium">Bs.</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  value={tasaBcv}
-                  onChange={(e) => setTasaBcv(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border border-slate-700 rounded-xl text-white font-mono text-base focus:outline-none focus:border-emerald-500 transition-colors"
-                  placeholder="Ej. 52.50"
-                />
-              </div>
-              <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-                <Info className="w-3.5 h-3.5 text-cyan-400 inline" />
-                Actualiza diariamente según la publicación del Banco Central de Venezuela.
-              </p>
-            </div>
-
-            {/* Simulador rápido de conversión */}
-            <div className="bg-slate-950/50 border border-slate-800/80 rounded-xl p-4">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-3">
-                Simulador de Conversión Automática
-              </span>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between py-1 border-b border-slate-800">
-                  <span className="text-slate-300">$5.00 USD</span>
-                  <span className="font-mono text-emerald-400 font-medium">
-                    {formatoVES(5 * tasaNum)}
-                  </span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-slate-800">
-                  <span className="text-slate-300">$20.00 USD</span>
-                  <span className="font-mono text-emerald-400 font-medium">
-                    {formatoVES(20 * tasaNum)}
-                  </span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-slate-300">$50.00 USD (Abono 50%: $25)</span>
-                  <span className="font-mono text-emerald-400 font-medium">
-                    {formatoVES(50 * tasaNum)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Sección: Opciones Comerciales y Ofertas */}
+      {/* 2. MÓDULO COMPLEMENTARIO: Ajustes Comerciales y de Atención */}
+      <form onSubmit={guardarAjustesComerciales} className="space-y-6">
+        {/* Modalidades de Venta */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 backdrop-blur space-y-4">
           <div className="flex items-center gap-2 mb-2">
             <Percent className="w-5 h-5 text-amber-400" />
-            <h2 className="text-lg font-bold text-white">Modalidades de Venta y Promociones</h2>
+            <h2 className="text-base font-bold text-white">Modalidades de Venta y Promociones</h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -248,11 +149,11 @@ export function StoreSettingsTab({ onTasaUpdated, showToast }: StoreSettingsProp
           </div>
         </div>
 
-        {/* Sección: Datos de la Tienda */}
+        {/* Datos de Contacto de la Tienda */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 backdrop-blur">
           <div className="flex items-center gap-2 mb-4">
             <Store className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-lg font-bold text-white">Datos de Contacto del Vendedor</h2>
+            <h2 className="text-base font-bold text-white">Datos de Contacto del Vendedor</h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -286,22 +187,17 @@ export function StoreSettingsTab({ onTasaUpdated, showToast }: StoreSettingsProp
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Botón de Guardado */}
-        <div className="flex justify-end pt-2">
-          <button
-            type="submit"
-            disabled={saving}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-semibold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all disabled:opacity-50"
-          >
-            {saving ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <Save className="w-4 h-4" />
-            )}
-            <span>{saving ? "Guardando en Supabase..." : "Guardar Configuración"}</span>
-          </button>
+          <div className="flex justify-end pt-5">
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs border border-slate-700 transition-all active:scale-95 disabled:opacity-50"
+            >
+              {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              <span>Guardar Datos de Tienda</span>
+            </button>
+          </div>
         </div>
       </form>
     </div>
