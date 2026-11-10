@@ -18,6 +18,7 @@ import { ProductoRow, CategoriaRow } from "@/types/database.types";
 import { createClient } from "@/lib/supabase/client";
 import { ProductModal } from "./ProductModal";
 import { convertirUsdaVes, formatoUSD, formatoVES } from "@/utils/currency";
+import { obtenerCategorias } from "@/actions/categories";
 
 interface InventoryTabProps {
   tasaBcv: number;
@@ -48,12 +49,7 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
       const tiendaId = process.env.NEXT_PUBLIC_TIENDA_ID || "11111111-1111-4111-8111-111111111111";
 
       // 1. Cargar Categorías
-      const { data: catData } = await supabase
-        .from("categorias")
-        .select("*")
-        .eq("tienda_id", tiendaId)
-        .order("orden", { ascending: true });
-
+      const catData = await obtenerCategorias(false);
       if (catData && catData.length > 0) {
         setCategorias(catData);
       }

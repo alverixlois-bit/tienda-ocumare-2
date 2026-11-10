@@ -10,6 +10,149 @@ export interface TasaBCVResponse {
   error?: string;
 }
 
+export interface ConfiguracionTiendaData {
+  tasa_bcv: number;
+  updated_at: string | null;
+  instagram_url?: string | null;
+  tiktok_url?: string | null;
+  facebook_url?: string | null;
+  whatsapp_1?: string | null;
+  whatsapp_1_nombre?: string | null;
+  whatsapp_2?: string | null;
+  whatsapp_2_nombre?: string | null;
+  whatsapp_3?: string | null;
+  whatsapp_3_nombre?: string | null;
+}
+
+/**
+ * Consulta la configuración completa de la tienda (tasa, redes y contactos WhatsApp).
+ */
+export async function obtenerConfiguracionTienda(): Promise<ConfiguracionTiendaData> {
+  const fallback: ConfiguracionTiendaData = {
+    tasa_bcv: 52.5,
+    updated_at: null,
+    instagram_url: "",
+    tiktok_url: "",
+    facebook_url: "",
+    whatsapp_1: "+584120000001",
+    whatsapp_1_nombre: "Ventas Principal",
+    whatsapp_2: "+584140000002",
+    whatsapp_2_nombre: "Atención al Cliente",
+    whatsapp_3: "+584160000003",
+    whatsapp_3_nombre: "Despachos y Pagos",
+  };
+
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("configuracion_tienda")
+      .select("*")
+      .eq("id", 1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Aviso al consultar configuracion_tienda:", error.message);
+    }
+
+    if (data) {
+      return {
+        tasa_bcv: Number(data.tasa_bcv) || 52.5,
+        updated_at: data.updated_at || null,
+        instagram_url: data.instagram_url || "",
+        tiktok_url: data.tiktok_url || "",
+        facebook_url: data.facebook_url || "",
+        whatsapp_1: data.whatsapp_1 || fallback.whatsapp_1,
+        whatsapp_1_nombre: data.whatsapp_1_nombre || fallback.whatsapp_1_nombre,
+        whatsapp_2: data.whatsapp_2 || fallback.whatsapp_2,
+        whatsapp_2_nombre: data.whatsapp_2_nombre || fallback.whatsapp_2_nombre,
+        whatsapp_3: data.whatsapp_3 || fallback.whatsapp_3,
+        whatsapp_3_nombre: data.whatsapp_3_nombre || fallback.whatsapp_3_nombre,
+      };
+    }
+
+    return fallback;
+  } catch (err) {
+    console.warn("Excepción al consultar configuracion_tienda:", err);
+    return fallback;
+  }
+}
+
+/**
+ * Actualiza los enlaces de redes sociales y los 3 contactos de WhatsApp de los vendedores.
+ */
+export async function actualizarRedesYContactos(
+  formData: FormData
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const instagram_url = formData.get("instagram_url")?.toString().trim() || null;
+    const tiktok_url = formData.get("tiktok_url")?.toString().trim() || null;
+    const facebook_url = formData.get("facebook_url")?.toString().trim() || null;
+
+    const whatsapp_1 = formData.get("whatsapp_1")?.toString().trim() || null;
+    const whatsapp_1_nombre = formData.get("whatsapp_1_nombre")?.toString().trim() || null;
+
+    const whatsapp_2 = formData.get("whatsapp_2")?.toString().trim() || null;
+    const whatsapp_2_nombre = formData.get("whatsapp_2_nombre")?.toString().trim() || null;
+
+    const whatsapp_3 = formData.get("whatsapp_3")?.toString().trim() || null;
+    const whatsapp_3_nombre = formData.get("whatsapp_3_nombre")?.toString().trim() || null;
+
+    const supabase = await createClient();
+    const nowIso = new Date().toISOString();
+
+    const payload = {
+      instagram_url,
+      tiktok_url,
+      facebook_url,
+      whatsapp_1,
+      whatsapp_1_nombre,
+      whatsapp_2,
+      whatsapp_2_nombre,
+      whatsapp_3,
+      whatsapp_3_nombre,
+      updated_at: nowIso,
+    };
+
+    const { data: rowCheck } = await supabase
+      .from("configuracion_tienda")
+      .select("id")
+      .eq("id", 1)
+      .maybeSingle();
+
+    let dbError = null;
+    if (rowCheck) {
+      const { error } = await supabase
+        .from("configuracion_tienda")
+        .update(payload)
+        .eq("id", 1);
+      dbError = error;
+    } else {
+      const { error } = await supabase
+        .from("configuracion_tienda")
+        .upsert({
+          id: 1,
+          tasa_bcv: 52.5,
+          ...payload,
+        });
+      dbError = error;
+    }
+
+    if (dbError) {
+      return { success: false, error: dbError.message };
+    }
+
+    revalidatePath("/admin");
+    revalidatePath("/catalogo");
+    revalidatePath("/pedido");
+    revalidatePath("/");
+
+    return { success: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Error al guardar redes y contactos";
+    return { success: false, error: msg };
+  }
+}
+
 /**
  * Consulta la tasa oficial BCV actual y la fecha de última actualización desde Supabase.
  */

@@ -52,13 +52,6 @@ export function HeaderCatalogo({
               <Truck className="w-3 h-3 text-cyan-400" />
               Envíos Zoom / MRW / Tealca
             </span>
-            <Link
-              href="/admin"
-              className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-medium transition-colors ml-2"
-            >
-              <Store className="w-3 h-3" />
-              <span>Soy Vendedor</span>
-            </Link>
           </div>
         </div>
       </div>

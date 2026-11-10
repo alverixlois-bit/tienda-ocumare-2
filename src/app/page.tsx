@@ -49,42 +49,38 @@ export default function HomePage() {
           {/* Card Comprador */}
           <Link
             href="/catalogo"
-            className="p-8 rounded-2xl bg-slate-800/40 border border-slate-700/50 hover:border-emerald-500/50 transition-all group backdrop-blur block"
+            className="p-8 rounded-2xl bg-slate-800/40 border border-slate-700/50 hover:border-emerald-500/50 transition-all group backdrop-blur block shadow-lg hover:shadow-emerald-500/5"
           >
             <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center mb-6">
               <ShoppingBag className="w-6 h-6" />
             </div>
             <h3 className="text-2xl font-bold text-white group-hover:text-emerald-400 transition-colors">
-              Portal de Compradores
+              Explorar Catálogo
             </h3>
             <p className="mt-2 text-sm text-slate-400">
-              Catálogo visual dinámico, precios duales en USD y Bolívares (BCV), carrito de compras por abono y pasarela de pago con chat directo estilo Binance P2P.
+              Catálogo visual dinámico, precios duales en USD y Bolívares (BCV), carrito de compras por abono y pasarela de pago segura con chat directo estilo Binance P2P.
             </p>
             <div className="mt-6 flex items-center gap-2 text-sm font-semibold text-emerald-400 group-hover:translate-x-1 transition-transform">
-              <span>Explorar catálogo</span>
+              <span>Ir a la tienda</span>
               <ArrowRight className="w-4 h-4" />
             </div>
           </Link>
 
-          {/* Card Vendedor */}
-          <Link
-            href="/admin"
-            className="p-8 rounded-2xl bg-slate-800/40 border border-slate-700/50 hover:border-cyan-500/50 transition-all group backdrop-blur block"
-          >
+          {/* Card Modalidad Encargos */}
+          <div className="p-8 rounded-2xl bg-slate-800/40 border border-slate-700/50 transition-all backdrop-blur block">
             <div className="w-12 h-12 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center justify-center mb-6">
-              <Store className="w-6 h-6" />
+              <RefreshCw className="w-6 h-6" />
             </div>
-            <h3 className="text-2xl font-bold text-white group-hover:text-cyan-400 transition-colors">
-              Panel del Vendedor (Admin)
+            <h3 className="text-2xl font-bold text-white">
+              Modalidad por Encargo
             </h3>
             <p className="mt-2 text-sm text-slate-400">
-              Gestión total de productos, fotos, videos, inventario con descuento automático, auditoría de pedidos, control de pagos entrantes y personalización en tiempo real.
+              Aparta tu producto abonando sólo el 50% inicial en Bolívares a tasa oficial BCV o divisas. El 50% restante lo cancelas contra entrega o previo al despacho por Zoom / MRW / Tealca.
             </p>
-            <div className="mt-6 flex items-center gap-2 text-sm font-semibold text-cyan-400 group-hover:translate-x-1 transition-transform">
-              <span>Administrar tienda</span>
-              <ArrowRight className="w-4 h-4" />
+            <div className="mt-6 flex items-center gap-2 text-sm font-medium text-cyan-400">
+              <span>100% Garantizado y seguro</span>
             </div>
-          </Link>
+          </div>
         </div>
       </section>
 

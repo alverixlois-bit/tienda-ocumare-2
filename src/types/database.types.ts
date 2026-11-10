@@ -81,7 +81,7 @@ export type CategoriaRow = {
   updated_at: string;
 };
 
-type CategoriaInsert = {
+export type CategoriaInsert = {
   id?: string;
   tienda_id: string;
   nombre: string;
@@ -93,7 +93,7 @@ type CategoriaInsert = {
   updated_at?: string;
 };
 
-type CategoriaUpdate = {
+export type CategoriaUpdate = {
   id?: string;
   tienda_id?: string;
   nombre?: string;
@@ -504,18 +504,45 @@ export type ConfiguracionTiendaRow = {
   id: string | number;
   tasa_bcv: number | string;
   updated_at?: string;
+  instagram_url?: string | null;
+  tiktok_url?: string | null;
+  facebook_url?: string | null;
+  whatsapp_1?: string | null;
+  whatsapp_1_nombre?: string | null;
+  whatsapp_2?: string | null;
+  whatsapp_2_nombre?: string | null;
+  whatsapp_3?: string | null;
+  whatsapp_3_nombre?: string | null;
 };
 
 export type ConfiguracionTiendaInsert = {
   id?: string | number;
   tasa_bcv: number | string;
   updated_at?: string;
+  instagram_url?: string | null;
+  tiktok_url?: string | null;
+  facebook_url?: string | null;
+  whatsapp_1?: string | null;
+  whatsapp_1_nombre?: string | null;
+  whatsapp_2?: string | null;
+  whatsapp_2_nombre?: string | null;
+  whatsapp_3?: string | null;
+  whatsapp_3_nombre?: string | null;
 };
 
 export type ConfiguracionTiendaUpdate = {
   id?: string | number;
   tasa_bcv?: number | string;
   updated_at?: string;
+  instagram_url?: string | null;
+  tiktok_url?: string | null;
+  facebook_url?: string | null;
+  whatsapp_1?: string | null;
+  whatsapp_1_nombre?: string | null;
+  whatsapp_2?: string | null;
+  whatsapp_2_nombre?: string | null;
+  whatsapp_3?: string | null;
+  whatsapp_3_nombre?: string | null;
 };
 
 export type ProductoDbRow = {

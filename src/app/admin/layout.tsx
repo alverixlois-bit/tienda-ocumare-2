@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { Store, ShieldCheck, ArrowLeft, LayoutDashboard } from "lucide-react";
+import { LogoutButton } from "@/components/admin/LogoutButton";
 
 export const metadata = {
   title: "Panel Administrativo del Vendedor | OcumareHub",
@@ -50,11 +51,13 @@ export default function AdminLayout({
             </span>
 
             <Link
-              href="/"
+              href="/catalogo"
               className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-white transition-colors"
             >
-              Ver Tienda Virtual
+              Ver Catálogo
             </Link>
+
+            <LogoutButton />
           </div>
         </div>
       </header>

@@ -9,11 +9,14 @@ import { CheckoutModal } from "@/components/catalogo/CheckoutModal";
 import { ProductoRow, CategoriaRow } from "@/types/database.types";
 import { createClient } from "@/lib/supabase/client";
 import { useCart } from "@/context/CartContext";
-import { Package, RefreshCw, Sparkles } from "lucide-react";
+import { Package, RefreshCw, Sparkles, Globe, Share2 } from "lucide-react";
+import { obtenerCategorias } from "@/actions/categories";
+import { obtenerConfiguracionTienda, ConfiguracionTiendaData } from "@/actions/config";
 
 export default function CatalogoPage() {
   const [productos, setProductos] = useState<ProductoRow[]>([]);
   const [categorias, setCategorias] = useState<CategoriaRow[]>([]);
+  const [configTienda, setConfigTienda] = useState<ConfiguracionTiendaData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState("");
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState("all");
@@ -34,24 +37,17 @@ export default function CatalogoPage() {
     try {
       const defaultTiendaId = process.env.NEXT_PUBLIC_TIENDA_ID || "11111111-1111-4111-8111-111111111111";
 
-      // 1. Cargar Tasa BCV de la tienda
-      const { data: tiendaData } = await supabase
-        .from("tiendas")
-        .select("tasa_bcv")
-        .eq("id", defaultTiendaId)
-        .maybeSingle();
-
-      if (tiendaData?.tasa_bcv) {
-        setTasaBcv(Number(tiendaData.tasa_bcv));
+      // 1. Cargar Configuración de Tienda (Tasa BCV y Redes)
+      const conf = await obtenerConfiguracionTienda();
+      if (conf) {
+        setConfigTienda(conf);
+        if (conf.tasa_bcv > 0) {
+          setTasaBcv(conf.tasa_bcv);
+        }
       }
 
-      // 2. Cargar Categorías
-      const { data: catData } = await supabase
-        .from("categorias")
-        .select("*")
-        .eq("tienda_id", defaultTiendaId)
-        .order("orden", { ascending: true });
-
+      // 2. Cargar Categorías Activas desde Supabase
+      const catData = await obtenerCategorias(true);
       if (catData && catData.length > 0) {
         setCategorias(catData);
       }
@@ -157,8 +153,44 @@ export default function CatalogoPage() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950 py-6 text-center text-xs text-slate-500">
+      {/* Footer con Redes Sociales */}
+      <footer className="border-t border-slate-900 bg-slate-950 py-8 px-4 text-center text-xs text-slate-500 space-y-3">
+        {(configTienda?.instagram_url || configTienda?.tiktok_url || configTienda?.facebook_url) && (
+          <div className="flex items-center justify-center gap-4 text-slate-400">
+            {configTienda.instagram_url && (
+              <a
+                href={configTienda.instagram_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-pink-400 transition-colors flex items-center gap-1"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>Instagram</span>
+              </a>
+            )}
+            {configTienda.tiktok_url && (
+              <a
+                href={configTienda.tiktok_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-cyan-400 transition-colors"
+              >
+                <span>TikTok</span>
+              </a>
+            )}
+            {configTienda.facebook_url && (
+              <a
+                href={configTienda.facebook_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-blue-400 transition-colors flex items-center gap-1"
+              >
+                <Globe className="w-4 h-4" />
+                <span>Facebook</span>
+              </a>
+            )}
+          </div>
+        )}
         <p>OcumareHub &copy; {new Date().getFullYear()} — Catálogo Virtual con Envíos a todo el país.</p>
       </footer>
 

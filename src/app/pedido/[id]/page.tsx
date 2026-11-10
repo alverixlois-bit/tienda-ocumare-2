@@ -19,6 +19,7 @@ import { OrdenRow, OrdenItemRow } from "@/types/database.types";
 import { createClient } from "@/lib/supabase/client";
 import { OrderStatusTracker } from "@/components/pedido/OrderStatusTracker";
 import { PaymentDetailsBox } from "@/components/pedido/PaymentDetailsBox";
+import { WhatsAppReporterBox } from "@/components/pedido/WhatsAppReporterBox";
 import { OrderP2PChat } from "@/components/pedido/OrderP2PChat";
 import { formatoUSD, formatoVES } from "@/utils/currency";
 
@@ -206,6 +207,14 @@ export default function PedidoPage() {
             tasaBcv={orden.tasa_cambio_bcv}
           />
         )}
+
+        {/* Notificación y Reporte de Pago vía WhatsApp a 3 Vendedores */}
+        <WhatsAppReporterBox
+          orden={orden}
+          montoAbonoUsd={esAbono ? orden.monto_inicial_usd : orden.total_usd}
+          montoAbonoVes={esAbono ? orden.monto_inicial_ves : orden.total_ves}
+          tasaBcv={orden.tasa_cambio_bcv}
+        />
 
         {/* Layout en dos columnas: Izquierda detalles / Derecha Chat P2P */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">

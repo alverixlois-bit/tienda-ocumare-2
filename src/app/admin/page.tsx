@@ -11,11 +11,13 @@ import {
 } from "lucide-react";
 import { StoreSettingsTab } from "@/components/admin/StoreSettingsTab";
 import { InventoryTab } from "@/components/admin/InventoryTab";
+import { CategoriesTab } from "@/components/admin/CategoriesTab";
 import { OrdersTab } from "@/components/admin/OrdersTab";
 import { AuditTab } from "@/components/admin/AuditTab";
 import { Toast, ToastProps } from "@/components/ui/Toast";
+import { Tag } from "lucide-react";
 
-type TabId = "ajustes" | "inventario" | "pedidos" | "auditoria";
+type TabId = "inventario" | "categorias" | "pedidos" | "ajustes" | "auditoria";
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<TabId>("inventario");
@@ -39,6 +41,7 @@ export default function AdminPage() {
 
   const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
     { id: "inventario", label: "Inventario de Productos", icon: Package },
+    { id: "categorias", label: "Categorías", icon: Tag },
     { id: "pedidos", label: "Monitor de Pedidos & Chat P2P", icon: ShoppingBag },
     { id: "ajustes", label: "Ajustes de Tienda & Tasa BCV", icon: Settings },
     { id: "auditoria", label: "Historial y Auditoría", icon: History },
@@ -91,6 +94,10 @@ export default function AdminPage() {
 
         {activeTab === "inventario" && (
           <InventoryTab tasaBcv={tasaBcv} showToast={showToast} />
+        )}
+
+        {activeTab === "categorias" && (
+          <CategoriesTab showToast={showToast} />
         )}
 
         {activeTab === "pedidos" && <OrdersTab showToast={showToast} />}
