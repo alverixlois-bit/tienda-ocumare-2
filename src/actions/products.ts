@@ -236,7 +236,7 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
 
         // Comprobar error específico de categoria_id (UUID syntax o constraint)
         if (
-          error.message.toLowerCase().includes("categoria_id") &&
+          (error.message || "").toLowerCase().includes("categoria_id") &&
           "categoria_id" in currentPayload
         ) {
           console.warn("Omitiendo categoria_id del payload y reintentando...");
@@ -288,7 +288,7 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
 
       // Comprobar error específico de categoria_id
       if (
-        error.message.toLowerCase().includes("categoria_id") &&
+        (error.message || "").toLowerCase().includes("categoria_id") &&
         "categoria_id" in currentPayload
       ) {
         console.warn("Omitiendo categoria_id del payload y reintentando...");

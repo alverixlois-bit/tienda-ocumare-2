@@ -22,6 +22,8 @@ export function CartDrawer() {
     tasaBcv,
   } = useCart();
 
+  const listaItems = Array.isArray(items) ? items : [];
+
   if (!isCartOpen) return null;
 
   function handleProceedToCheckout() {
@@ -48,7 +50,7 @@ export function CartDrawer() {
 
         {/* Lista de Productos */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {items.length === 0 ? (
+          {listaItems.length === 0 ? (
             <div className="text-center py-20 text-slate-500">
               <ShoppingBag className="w-12 h-12 mx-auto mb-3 opacity-30" />
               <p className="text-sm font-medium text-slate-400">Tu carrito está vacío</p>
@@ -57,7 +59,7 @@ export function CartDrawer() {
               </p>
             </div>
           ) : (
-            items.map((item) => {
+            listaItems.map((item) => {
               const precioUsd =
                 item.producto.en_oferta && item.producto.precio_oferta
                   ? item.producto.precio_oferta

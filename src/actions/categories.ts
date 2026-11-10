@@ -35,7 +35,7 @@ function extraerError(err: unknown): string {
  * Genera un slug URL limpio y seguro a partir del nombre.
  */
 function generarSlug(nombre: string): string {
-  return nombre
+  return (nombre || "")
     .toLowerCase()
     .trim()
     .normalize("NFD")
@@ -112,7 +112,7 @@ export async function crearCategoria(formData: FormData): Promise<CategoriaActio
       .maybeSingle();
 
     // Reintentar sin tienda_id si la columna no existe o falla la restricción
-    if (error && (error.message.toLowerCase().includes("tienda_id") || error.code === "42703")) {
+    if (error && ((error.message || "").toLowerCase().includes("tienda_id") || error.code === "42703")) {
       delete payload.tienda_id;
       const retry = await supabase
         .from("categorias")

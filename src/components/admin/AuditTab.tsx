@@ -47,10 +47,10 @@ export function AuditTab({ showToast }: AuditTabProps) {
             orden_id: "",
             tienda_id: tiendaId,
             numero_orden: `LOG-${String(l.id)}`,
-            accion: (l.accion?.toLowerCase().includes("actualiz") ? "actualizada" : "creada") as "creada" | "actualizada",
+            accion: ((l.accion || "").toLowerCase().includes("actualiz") ? "actualizada" : "creada") as "creada" | "actualizada",
             estado_anterior: null,
             estado_nuevo: "procesando",
-            cambios: (typeof l.detalles === "object" ? l.detalles : { detalle: l.detalles }) as any,
+            cambios: (typeof l.detalles === "object" && l.detalles !== null ? l.detalles : { detalle: l.detalles }) as any,
             actor_id: null,
             created_at: l.created_at || new Date().toISOString(),
           }));
@@ -67,9 +67,15 @@ export function AuditTab({ showToast }: AuditTabProps) {
     }
   }
 
-  const filteredLogs = logs.filter((log) =>
-    log.numero_orden.toLowerCase().includes(search.toLowerCase())
-  );
+  const listaLogs = Array.isArray(logs) ? logs : [];
+  const searchLower = (search || "").toLowerCase().trim();
+
+  const filteredLogs = listaLogs.filter((log) => {
+    if (!log) return false;
+    const num = (log.numero_orden || "").toLowerCase();
+    const accion = (log.accion || "").toLowerCase();
+    return searchLower === "" || num.includes(searchLower) || accion.includes(searchLower);
+  });
 
   return (
     <div className="space-y-6">

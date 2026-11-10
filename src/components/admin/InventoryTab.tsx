@@ -135,18 +135,26 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
     setIsModalOpen(true);
   }
 
-  // Filtrado
-  const filteredProducts = productos.filter((prod) => {
+  // Filtrado seguro y blindado
+  const listaProductos = Array.isArray(productos) ? productos : [];
+  const searchLower = (search || "").toLowerCase().trim();
+
+  const filteredProducts = listaProductos.filter((prod) => {
+    if (!prod) return false;
+    const titulo = (prod.titulo || prod.nombre || "").toLowerCase();
+    const descripcion = (prod.descripcion || "").toLowerCase();
+
     const matchesSearch =
-      prod.titulo.toLowerCase().includes(search.toLowerCase()) ||
-      (prod.descripcion && prod.descripcion.toLowerCase().includes(search.toLowerCase()));
+      searchLower === "" ||
+      titulo.includes(searchLower) ||
+      descripcion.includes(searchLower);
 
     const matchesCategory =
       selectedCategory === "all" || prod.categoria_id === selectedCategory;
 
     const matchesStatus =
       filterStatus === "all" ||
-      (filterStatus === "active" && prod.activo) ||
+      (filterStatus === "active" && Boolean(prod.activo)) ||
       (filterStatus === "inactive" && !prod.activo);
 
     return matchesSearch && matchesCategory && matchesStatus;
@@ -217,24 +225,24 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
           <span className="text-xs text-slate-400 block">Total Productos</span>
-          <span className="text-xl font-bold text-white">{productos.length}</span>
+          <span className="text-xl font-bold text-white">{listaProductos.length}</span>
         </div>
         <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
           <span className="text-xs text-slate-400 block">Activos en Catálogo</span>
           <span className="text-xl font-bold text-emerald-400">
-            {productos.filter((p) => p.activo).length}
+            {listaProductos.filter((p) => Boolean(p?.activo)).length}
           </span>
         </div>
         <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
           <span className="text-xs text-slate-400 block">En Oferta</span>
           <span className="text-xl font-bold text-amber-400">
-            {productos.filter((p) => p.en_oferta).length}
+            {listaProductos.filter((p) => Boolean(p?.en_oferta)).length}
           </span>
         </div>
         <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
           <span className="text-xs text-slate-400 block">Stock Bajo / Crítico</span>
           <span className="text-xl font-bold text-red-400">
-            {productos.filter((p) => parseFloat(p.stock || "0") <= 3).length}
+            {listaProductos.filter((p) => parseFloat((p?.stock ?? "0").toString()) <= 3).length}
           </span>
         </div>
       </div>

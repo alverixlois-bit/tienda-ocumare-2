@@ -89,7 +89,7 @@ export default function PedidoPage() {
             cliente_telefono: pedidoData.cliente_telefono,
             cliente_email: null,
             direccion_entrega: pedidoData.agencia_envio,
-            metodo_entrega: (pedidoData.agencia_envio?.toLowerCase().includes("mrw") ? "mrw" : "zoom") as "zoom" | "mrw",
+            metodo_entrega: ((pedidoData.agencia_envio || "").toLowerCase().includes("mrw") ? "mrw" : "zoom") as "zoom" | "mrw",
             modalidad_pago: "abono",
             estado: (pedidoData.estado_pago || "pendiente") as any,
             moneda_base: "USD",

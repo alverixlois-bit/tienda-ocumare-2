@@ -95,7 +95,7 @@ export function OrdersTab({ showToast }: OrdersTabProps) {
             cliente_telefono: p.cliente_telefono,
             cliente_email: null,
             direccion_entrega: p.agencia_envio,
-            metodo_entrega: (p.agencia_envio?.toLowerCase().includes("mrw") ? "mrw" : "zoom") as "zoom" | "mrw",
+            metodo_entrega: ((p.agencia_envio || "").toLowerCase().includes("mrw") ? "mrw" : "zoom") as "zoom" | "mrw",
             modalidad_pago: "abono",
             estado: (p.estado_pago || "pendiente") as EstadoOrden,
             moneda_base: "USD",
@@ -147,12 +147,21 @@ export function OrdersTab({ showToast }: OrdersTabProps) {
     }
   }
 
-  // Filtrado
-  const filteredOrdenes = ordenes.filter((o) => {
+  // Filtrado seguro
+  const listaOrdenes = Array.isArray(ordenes) ? ordenes : [];
+  const searchLower = (search || "").toLowerCase().trim();
+
+  const filteredOrdenes = listaOrdenes.filter((o) => {
+    if (!o) return false;
+    const num = (o.numero || "").toLowerCase();
+    const cliente = (o.cliente_nombre || "").toLowerCase();
+    const telf = (o.cliente_telefono || "");
+
     const matchesSearch =
-      o.numero.toLowerCase().includes(search.toLowerCase()) ||
-      o.cliente_nombre.toLowerCase().includes(search.toLowerCase()) ||
-      (o.cliente_telefono && o.cliente_telefono.includes(search));
+      searchLower === "" ||
+      num.includes(searchLower) ||
+      cliente.includes(searchLower) ||
+      telf.includes(searchLower);
 
     const matchesEstado =
       filtroEstado === "all" ||

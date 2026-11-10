@@ -82,11 +82,19 @@ export default function CatalogoPage() {
     setVideoModalOpen(true);
   }
 
-  // Filtrado
-  const productosFiltrados = productos.filter((p) => {
+  // Filtrado seguro y blindado
+  const listaProds = Array.isArray(productos) ? productos : [];
+  const busquedaLower = (busqueda || "").toLowerCase().trim();
+
+  const productosFiltrados = listaProds.filter((p) => {
+    if (!p) return false;
+    const titulo = (p.titulo || p.nombre || "").toLowerCase();
+    const desc = (p.descripcion || "").toLowerCase();
+
     const matchesSearch =
-      p.titulo.toLowerCase().includes(busqueda.toLowerCase()) ||
-      (p.descripcion && p.descripcion.toLowerCase().includes(busqueda.toLowerCase()));
+      busquedaLower === "" ||
+      titulo.includes(busquedaLower) ||
+      desc.includes(busquedaLower);
 
     const matchesCat =
       categoriaSeleccionada === "all" || p.categoria_id === categoriaSeleccionada;

@@ -42,7 +42,9 @@ export function CheckoutModal() {
     setErrorMsg("");
     setLoading(true);
 
-    if (items.length === 0) {
+    const listaItems = Array.isArray(items) ? items : [];
+
+    if (listaItems.length === 0) {
       setErrorMsg("El carrito está vacío");
       setLoading(false);
       return;
@@ -94,7 +96,7 @@ export function CheckoutModal() {
         pedidoFinalId = ordenCreada.id;
 
         // 2. Crear ítems en orden_items
-        const itemsPayload: OrdenItemInsert[] = items.map((item) => {
+        const itemsPayload: OrdenItemInsert[] = listaItems.map((item) => {
           const precioUsd =
             item.producto.en_oferta && item.producto.precio_oferta
               ? item.producto.precio_oferta

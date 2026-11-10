@@ -6,8 +6,8 @@ import {
   Package,
   ShoppingBag,
   History,
-  DollarSign,
   TrendingUp,
+  Tag,
 } from "lucide-react";
 import { StoreSettingsTab } from "@/components/admin/StoreSettingsTab";
 import { InventoryTab } from "@/components/admin/InventoryTab";
@@ -15,23 +15,26 @@ import { CategoriesTab } from "@/components/admin/CategoriesTab";
 import { OrdersTab } from "@/components/admin/OrdersTab";
 import { AuditTab } from "@/components/admin/AuditTab";
 import { Toast, ToastProps } from "@/components/ui/Toast";
-import { Tag } from "lucide-react";
 
 type TabId = "inventario" | "categorias" | "pedidos" | "ajustes" | "auditoria";
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<TabId>("inventario");
-  const [tasaBcv, setTasaBcv] = useState<number>(52.50);
+  const [tasaBcv, setTasaBcv] = useState<number>(52.5);
   const [toast, setToast] = useState<Omit<ToastProps, "onClose"> | null>(null);
 
   // Cargar tasa de respaldo desde almacenamiento
   useEffect(() => {
-    const saved = localStorage.getItem("ocumare_tasa_bcv");
-    if (saved) {
-      const parsed = parseFloat(saved);
-      if (!isNaN(parsed) && parsed > 0) {
-        setTasaBcv(parsed);
+    try {
+      const saved = localStorage.getItem("ocumare_tasa_bcv");
+      if (saved) {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed) && parsed > 0) {
+          setTasaBcv(parsed);
+        }
       }
+    } catch {
+      // LocalStorage puede no estar disponible en SSR
     }
   }, []);
 
@@ -59,8 +62,9 @@ export default function AdminPage() {
             return (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl font-medium text-xs sm:text-sm whitespace-nowrap transition-all duration-200 ${
+                className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl font-medium text-xs sm:text-sm whitespace-nowrap transition-all duration-200 cursor-pointer ${
                   isActive
                     ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shadow-sm shadow-cyan-500/10"
                     : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
@@ -85,13 +89,6 @@ export default function AdminPage() {
 
       {/* Contenido de la pestaña activa */}
       <div className="mt-4">
-        {activeTab === "ajustes" && (
-          <StoreSettingsTab
-            onTasaUpdated={(nuevaTasa) => setTasaBcv(nuevaTasa)}
-            showToast={showToast}
-          />
-        )}
-
         {activeTab === "inventario" && (
           <InventoryTab tasaBcv={tasaBcv} showToast={showToast} />
         )}
@@ -101,6 +98,13 @@ export default function AdminPage() {
         )}
 
         {activeTab === "pedidos" && <OrdersTab showToast={showToast} />}
+
+        {activeTab === "ajustes" && (
+          <StoreSettingsTab
+            onTasaUpdated={(nuevaTasa) => setTasaBcv(nuevaTasa)}
+            showToast={showToast}
+          />
+        )}
 
         {activeTab === "auditoria" && <AuditTab showToast={showToast} />}
       </div>
