@@ -17,7 +17,36 @@ export type CategoriaActionResponse = {
 };
 
 /**
+ * Extrae mensaje de error seguro de Supabase o JavaScript.
+ */
+function extraerError(err: unknown): string {
+  if (!err) return "Error desconocido";
+  if (typeof err === "string") return err;
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null) {
+    const obj = err as Record<string, any>;
+    if (obj.message) return String(obj.message);
+    if (obj.error_description) return String(obj.error_description);
+  }
+  return String(err);
+}
+
+/**
+ * Genera un slug URL limpio y seguro a partir del nombre.
+ */
+function generarSlug(nombre: string): string {
+  return nombre
+    .toLowerCase()
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
  * Obtiene todas las categorías activas o totales para el catálogo y panel de control.
+ * Siempre retorna un array (vacío si no hay datos o falla la consulta).
  */
 export async function obtenerCategorias(soloActivas: boolean = false): Promise<CategoriaRow[]> {
   try {
@@ -40,7 +69,7 @@ export async function obtenerCategorias(soloActivas: boolean = false): Promise<C
       return [];
     }
 
-    return (data as CategoriaRow[]) || [];
+    return Array.isArray(data) ? (data as CategoriaRow[]) : [];
   } catch (err) {
     console.warn("Excepción al consultar categorias:", err);
     return [];
@@ -48,7 +77,7 @@ export async function obtenerCategorias(soloActivas: boolean = false): Promise<C
 }
 
 /**
- * Agrega una nueva categoría al sistema.
+ * Agrega una nueva categoría al sistema y revalida las rutas.
  */
 export async function crearCategoria(formData: FormData): Promise<CategoriaActionResponse> {
   try {
@@ -61,27 +90,38 @@ export async function crearCategoria(formData: FormData): Promise<CategoriaActio
       return { success: false, error: "El nombre de la categoría es obligatorio." };
     }
 
-    const slug = nombre
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
+    const slug = generarSlug(nombre);
 
     const supabase = await createClient();
+    const tiendaId =
+      process.env.NEXT_PUBLIC_TIENDA_ID || "11111111-1111-4111-8111-111111111111";
 
-    const { data, error } = await supabase
+    const payload: Record<string, any> = {
+      tienda_id: tiendaId,
+      nombre,
+      slug,
+      descripcion,
+      activo: true,
+      orden: isNaN(orden) ? 0 : orden,
+    };
+
+    let { data, error } = await supabase
       .from("categorias")
-      .insert({
-        tienda_id: "00000000-0000-0000-0000-000000000001",
-        nombre,
-        slug,
-        descripcion,
-        activo: true,
-        orden: isNaN(orden) ? 0 : orden,
-      } as any)
+      .insert(payload as any)
       .select()
-      .single();
+      .maybeSingle();
+
+    // Reintentar sin tienda_id si la columna no existe o falla la restricción
+    if (error && (error.message.toLowerCase().includes("tienda_id") || error.code === "42703")) {
+      delete payload.tienda_id;
+      const retry = await supabase
+        .from("categorias")
+        .insert(payload as any)
+        .select()
+        .maybeSingle();
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error) {
       return { success: false, error: error.message };
@@ -93,8 +133,7 @@ export async function crearCategoria(formData: FormData): Promise<CategoriaActio
 
     return { success: true, categoria: data as CategoriaRow };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Error desconocido al crear categoría";
-    return { success: false, error: msg };
+    return { success: false, error: extraerError(err) };
   }
 }
 
@@ -117,12 +156,7 @@ export async function actualizarCategoria(
       return { success: false, error: "El nombre de la categoría es obligatorio." };
     }
 
-    const slug = nombre
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
+    const slug = generarSlug(nombre);
 
     const supabase = await createClient();
 
@@ -146,7 +180,7 @@ export async function actualizarCategoria(
       .update(updates)
       .eq("id", id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       return { success: false, error: error.message };
@@ -158,8 +192,7 @@ export async function actualizarCategoria(
 
     return { success: true, categoria: data as CategoriaRow };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Error desconocido al actualizar categoría";
-    return { success: false, error: msg };
+    return { success: false, error: extraerError(err) };
   }
 }
 
@@ -181,7 +214,7 @@ export async function toggleEstadoCategoria(
       })
       .eq("id", id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       return { success: false, error: error.message };
@@ -193,8 +226,7 @@ export async function toggleEstadoCategoria(
 
     return { success: true, categoria: data as CategoriaRow };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Error al alternar estado de categoría";
-    return { success: false, error: msg };
+    return { success: false, error: extraerError(err) };
   }
 }
 
@@ -217,7 +249,6 @@ export async function eliminarCategoria(id: string): Promise<{ success: boolean;
 
     return { success: true };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Error al eliminar categoría";
-    return { success: false, error: msg };
+    return { success: false, error: extraerError(err) };
   }
 }

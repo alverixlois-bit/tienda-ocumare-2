@@ -50,9 +50,7 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
 
       // 1. Cargar Categorías
       const catData = await obtenerCategorias(false);
-      if (catData && catData.length > 0) {
-        setCategorias(catData);
-      }
+      setCategorias(Array.isArray(catData) ? catData : []);
 
       // 2. Cargar Productos
       let { data: prodData, error: prodErr } = await supabase
@@ -172,7 +170,7 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
 
         {/* Filtros rápidos */}
         <div className="flex flex-wrap items-center gap-2">
-          {categorias.length > 0 && (
+          {Array.isArray(categorias) && categorias.length > 0 && (
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}

@@ -19,6 +19,7 @@ import {
 import { ProductoRow, CategoriaRow } from "@/types/database.types";
 import { convertirUsdaVes, formatoVES, sanitizarNumero } from "@/utils/currency";
 import { guardarProducto } from "@/actions/products";
+import { obtenerCategorias } from "@/actions/categories";
 import { createClient } from "@/lib/supabase/client";
 
 interface ProductModalProps {
@@ -27,7 +28,7 @@ interface ProductModalProps {
   onSaved: () => void;
   producto?: ProductoRow | null;
   tasaBcv: number;
-  categorias: CategoriaRow[];
+  categorias?: CategoriaRow[];
   showToast: (msg: string, type: "success" | "error" | "info") => void;
 }
 
@@ -77,6 +78,19 @@ export function ProductModal({
   const [subiendoVideo, setSubiendoVideo] = useState(false);
   const [modoImagen, setModoImagen] = useState<"upload" | "url">("upload");
   const [modoVideo, setModoVideo] = useState<"upload" | "url">("upload");
+
+  // Blindaje y carga dinámica de categorías disponibles
+  const [listaCategorias, setListaCategorias] = useState<CategoriaRow[]>([]);
+
+  useEffect(() => {
+    if (Array.isArray(categorias) && categorias.length > 0) {
+      setListaCategorias(categorias);
+    } else {
+      obtenerCategorias(true)
+        .then((data) => setListaCategorias(Array.isArray(data) ? data : []))
+        .catch(() => setListaCategorias([]));
+    }
+  }, [categorias, isOpen]);
 
   useEffect(() => {
     if (producto) {
@@ -312,11 +326,12 @@ export function ProductModal({
                 className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-cyan-500 transition-colors"
               >
                 <option value="">(Sin categoría asignada)</option>
-                {categorias.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.nombre}
-                  </option>
-                ))}
+                {Array.isArray(listaCategorias) &&
+                  listaCategorias.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.nombre}
+                    </option>
+                  ))}
               </select>
             </div>
 

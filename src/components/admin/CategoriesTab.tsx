@@ -39,12 +39,16 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
   const [formOrden, setFormOrden] = useState("0");
   const [formActivo, setFormActivo] = useState(true);
 
+  // Blindaje estricto: siempre asegurar que categorias sea un array
+  const listaCategorias = Array.isArray(categorias) ? categorias : [];
+
   const fetchCategorias = async () => {
     setLoading(true);
     try {
       const data = await obtenerCategorias(false);
-      setCategorias(data);
+      setCategorias(Array.isArray(data) ? data : []);
     } catch {
+      setCategorias([]);
       showToast("Error al cargar categorías", "error");
     } finally {
       setLoading(false);
@@ -59,17 +63,17 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
     setEditingCategoria(null);
     setFormNombre("");
     setFormDescripcion("");
-    setFormOrden((categorias.length * 10).toString());
+    setFormOrden((listaCategorias.length * 10).toString());
     setFormActivo(true);
     setIsModalOpen(true);
   };
 
   const openEditModal = (cat: CategoriaRow) => {
     setEditingCategoria(cat);
-    setFormNombre(cat.nombre);
+    setFormNombre(cat.nombre || "");
     setFormDescripcion(cat.descripcion || "");
-    setFormOrden(cat.orden?.toString() || "0");
-    setFormActivo(cat.activo);
+    setFormOrden(cat.orden !== undefined && cat.orden !== null ? cat.orden.toString() : "0");
+    setFormActivo(cat.activo ?? true);
     setIsModalOpen(true);
   };
 
@@ -92,7 +96,7 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
         if (res.success) {
           showToast("Categoría actualizada exitosamente", "success");
           setIsModalOpen(false);
-          fetchCategorias();
+          await fetchCategorias();
         } else {
           showToast(res.error || "Error al actualizar", "error");
         }
@@ -101,7 +105,7 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
         if (res.success) {
           showToast("Categoría creada exitosamente", "success");
           setIsModalOpen(false);
-          fetchCategorias();
+          await fetchCategorias();
         } else {
           showToast(res.error || "Error al crear categoría", "error");
         }
@@ -119,7 +123,9 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
           "success"
         );
         setCategorias((prev) =>
-          prev.map((c) => (c.id === cat.id ? { ...c, activo: nuevoEstado } : c))
+          (Array.isArray(prev) ? prev : []).map((c) =>
+            c.id === cat.id ? { ...c, activo: nuevoEstado } : c
+          )
         );
       } else {
         showToast(res.error || "No se pudo cambiar el estado", "error");
@@ -134,7 +140,7 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
       const res = await eliminarCategoria(id);
       if (res.success) {
         showToast("Categoría eliminada", "success");
-        setCategorias((prev) => prev.filter((c) => c.id !== id));
+        setCategorias((prev) => (Array.isArray(prev) ? prev : []).filter((c) => c.id !== id));
       } else {
         showToast(res.error || "Error al eliminar categoría", "error");
       }
@@ -156,8 +162,9 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
         </div>
 
         <button
+          type="button"
           onClick={openAddModal}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold text-xs shadow-md shadow-cyan-500/20 transition-all transform active:scale-95"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold text-xs shadow-md shadow-cyan-500/20 transition-all transform active:scale-95 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Nueva Categoría</span>
@@ -170,7 +177,7 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
           <Loader2 className="w-8 h-8 animate-spin text-cyan-400 mb-2" />
           <p className="text-sm">Cargando categorías...</p>
         </div>
-      ) : categorias.length === 0 ? (
+      ) : listaCategorias.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 bg-slate-900/50 border border-dashed border-slate-800 rounded-2xl text-center p-6">
           <FolderOpen className="w-12 h-12 text-slate-600 mb-3" />
           <h3 className="text-base font-semibold text-slate-300">No hay categorías registradas</h3>
@@ -178,15 +185,16 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
             Crea la primera categoría para organizar los productos de tu catálogo por tipo.
           </p>
           <button
+            type="button"
             onClick={openAddModal}
-            className="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-xl text-xs font-medium border border-slate-700 transition-colors"
+            className="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-xl text-xs font-medium border border-slate-700 transition-colors cursor-pointer"
           >
             Crear categoría ahora
           </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {categorias.map((cat) => (
+          {listaCategorias.map((cat) => (
             <div
               key={cat.id}
               className={`p-5 rounded-2xl border transition-all ${
@@ -202,9 +210,10 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
                       {cat.nombre}
                     </span>
                     <button
+                      type="button"
                       onClick={() => handleToggleEstado(cat)}
                       title={cat.activo ? "Desactivar" : "Activar"}
-                      className="shrink-0 transition-opacity hover:opacity-80"
+                      className="shrink-0 transition-opacity hover:opacity-80 cursor-pointer"
                     >
                       {cat.activo ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -233,15 +242,17 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
 
                 <div className="flex items-center gap-1 shrink-0">
                   <button
+                    type="button"
                     onClick={() => openEditModal(cat)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
                     title="Editar"
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleDelete(cat.id, cat.nombre)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                     title="Eliminar"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -267,8 +278,9 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
           <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl relative">
             <button
+              type="button"
               onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -339,14 +351,14 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 text-xs font-semibold transition-colors"
+                  className="px-4 py-2.5 rounded-xl border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 text-xs font-semibold transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md shadow-cyan-500/20 disabled:opacity-50 transition-all"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md shadow-cyan-500/20 disabled:opacity-50 transition-all cursor-pointer"
                 >
                   {isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />

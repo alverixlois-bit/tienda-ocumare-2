@@ -102,7 +102,7 @@ export function HeaderCatalogo({
       </div>
 
       {/* Carrusel de Categorías / Pills */}
-      {categorias.length > 0 && (
+      {Array.isArray(categorias) && categorias.length > 0 && (
         <div className="border-t border-slate-800/80 bg-slate-950/60 px-4 py-2.5">
           <div className="max-w-7xl mx-auto flex items-center gap-2 overflow-x-auto scrollbar-none py-0.5">
             <button
