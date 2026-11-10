@@ -15,6 +15,7 @@ export interface GuardarProductoPayload {
   categoria_id?: string | null;
   imagen_url?: string | null;
   imagenes?: string[];
+  imagen?: string | null;
   video_url?: string | null;
   en_oferta?: boolean;
   precio_oferta?: string | number | null;
@@ -26,6 +27,59 @@ export interface ProductoActionResult {
   success: boolean;
   data?: any;
   error?: string;
+}
+
+/**
+ * Detecta si el mensaje de error de PostgreSQL / Supabase hace referencia
+ * a una columna que no existe en la tabla.
+ */
+function detectarColumnaInexistente(mensajeError: string): string | null {
+  if (!mensajeError) return null;
+
+  // 1. PostgreSQL: column "xyz" of relation "productos" does not exist
+  const match1 = mensajeError.match(
+    /column\s+["']?([a-zA-Z0-9_]+)["']?\s+(?:of relation\s+["']?[a-zA-Z0-9_]+["']?\s*)?does not exist/i
+  );
+  if (match1 && match1[1]) return match1[1].toLowerCase();
+
+  // 2. PostgREST schema cache: Could not find the 'xyz' column of 'productos' in the schema cache
+  const match2 = mensajeError.match(/Could not find the ['"]([a-zA-Z0-9_]+)['"] column/i);
+  if (match2 && match2[1]) return match2[1].toLowerCase();
+
+  // 3. PostgREST: column "xyz" does not exist
+  const match3 = mensajeError.match(/column\s+["']([a-zA-Z0-9_]+)["']\s+does not exist/i);
+  if (match3 && match3[1]) return match3[1].toLowerCase();
+
+  // 4. Búsqueda de columnas comunes cuando se menciona error de columna
+  const camposConocidos = [
+    "imagen_url",
+    "imagenes",
+    "imagen",
+    "categoria_id",
+    "video_url",
+    "en_oferta",
+    "precio_oferta",
+    "moneda_base",
+    "precio_base",
+    "precio_usd",
+    "unidad_medida",
+    "permite_decimales",
+    "tienda_id",
+    "updated_at",
+  ];
+
+  for (const campo of camposConocidos) {
+    if (
+      mensajeError.toLowerCase().includes(campo) &&
+      (mensajeError.toLowerCase().includes("does not exist") ||
+        mensajeError.toLowerCase().includes("schema cache") ||
+        mensajeError.toLowerCase().includes("not find"))
+    ) {
+      return campo;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -53,7 +107,9 @@ function extraerMensajeError(err: unknown): string {
 }
 
 /**
- * Server Action segura para crear o editar un producto en Supabase.
+ * Server Action ultra-resiliente para crear o editar productos en Supabase.
+ * - Soporta variantes de columnas para imagen: imagen_url, imagenes y imagen.
+ * - Detecta columnas faltantes y las omite dinámicamente antes de reintentar.
  */
 export async function guardarProducto(payload: GuardarProductoPayload): Promise<ProductoActionResult> {
   try {
@@ -65,7 +121,7 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
       return { success: false, error: "El nombre o título del producto es obligatorio." };
     }
 
-    // 2. Sanitizar Precios con reemplazo de coma a punto y parseFloat
+    // 2. Sanitizar Precios
     const precioNumerico = sanitizarNumero(payload.precio_usd ?? payload.precio_base, -1);
     if (precioNumerico < 0) {
       return { success: false, error: "El precio en USD debe ser un número válido mayor o igual a 0." };
@@ -79,8 +135,8 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
     // 3. Sanitizar Stock
     const stockNumerico = Math.max(0, Math.floor(sanitizarNumero(payload.stock, 0)));
 
-    // 4. Sanitizar Imágenes (array vacío [] por defecto si está vacío o no se ingresó)
-    const imagenUrl = payload.imagen_url?.trim() || "";
+    // 4. Sanitizar Imágenes: variantes imagen_url, imagenes (array) e imagen
+    const imagenUrl = payload.imagen_url?.trim() || payload.imagen?.trim() || "";
     let imagenesArray: string[] = [];
     if (Array.isArray(payload.imagenes) && payload.imagenes.length > 0) {
       imagenesArray = payload.imagenes.filter((url) => typeof url === "string" && url.trim().length > 0);
@@ -95,7 +151,7 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
       process.env.NEXT_PUBLIC_TIENDA_ID ||
       "00000000-0000-0000-0000-000000000001";
 
-    // 5. Sanitización estricta de categoria_id (evitar cadenas vacías, convertirlas a null)
+    // 5. Sanitizar categoria_id (si no es UUID válido o está vacío, enviar null)
     let categoriaId: string | null = null;
     if (payload.categoria_id && typeof payload.categoria_id === "string") {
       const cleanCat = payload.categoria_id.trim();
@@ -113,8 +169,8 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
     const videoUrl = payload.video_url?.trim() || null;
     const descripcion = payload.descripcion?.trim() || null;
 
-    // Payload de compatibilidad dual
-    const dbPayload: Record<string, any> = {
+    // Construcción del payload inicial con todas las variantes conocidas
+    const currentPayload: Record<string, any> = {
       tienda_id: tiendaId,
       // Nombres
       nombre: nombreFinal,
@@ -126,9 +182,11 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
       moneda_base: "USD",
       stock: stockNumerico,
       activo,
-      // Imágenes
+      // 1. Variantes de imagen requeridas
       imagen_url: imagenUrl || null,
       imagenes: imagenesArray,
+      imagen: imagenUrl || null,
+      // Multimedia y opciones
       video_url: videoUrl,
       en_oferta: enOferta,
       precio_oferta: precioOfertaNum !== null ? precioOfertaNum.toFixed(2) : null,
@@ -137,201 +195,120 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
       updated_at: new Date().toISOString(),
     };
 
-    // Solo incluir categoria_id si tiene un valor no nulo
     if (categoriaId !== null) {
-      dbPayload.categoria_id = categoriaId;
+      currentPayload.categoria_id = categoriaId;
     } else {
-      dbPayload.categoria_id = null;
+      currentPayload.categoria_id = null;
     }
 
+    const maxRetries = 10;
+    let ultimoError: any = null;
+    let resultadoData: any = null;
+
+    // -------------------------------------------------------------------------
+    // MODO UPDATE
+    // -------------------------------------------------------------------------
     if (payload.id) {
-      // Intentar UPDATE con todas las columnas
-      let { data, error } = await supabase
-        .from("productos")
-        .update(dbPayload as any)
-        .eq("id", payload.id)
-        .select()
-        .maybeSingle();
-
-      // Si falla por columna categoria_id inexistente o error de tipo UUID
-      if (error && error.message.toLowerCase().includes("categoria_id")) {
-        console.warn("Aviso: reintentando update sin columna categoria_id...");
-        delete dbPayload.categoria_id;
-        const retryCat = await supabase
+      for (let intento = 0; intento < maxRetries; intento++) {
+        const { data, error } = await supabase
           .from("productos")
-          .update(dbPayload as any)
-          .eq("id", payload.id)
-          .select()
-          .maybeSingle();
-        data = retryCat.data;
-        error = retryCat.error;
-      }
-
-      if (error) {
-        console.warn("Aviso al actualizar con esquema completo, reintentando...", error.message);
-
-        // Fallback 1: Esquema simplificado
-        const fallback1: Record<string, any> = {
-          nombre: nombreFinal,
-          descripcion,
-          precio_usd: precioNumerico,
-          stock: stockNumerico,
-          activo,
-          imagenes: imagenesArray,
-          imagen_url: imagenUrl || null,
-          video_url: videoUrl,
-          updated_at: new Date().toISOString(),
-        };
-        if (categoriaId !== null) fallback1.categoria_id = categoriaId;
-
-        let { data: dataRetry1, error: errRetry1 } = await supabase
-          .from("productos")
-          .update(fallback1 as any)
+          .update(currentPayload as any)
           .eq("id", payload.id)
           .select()
           .maybeSingle();
 
-        if (errRetry1 && errRetry1.message.toLowerCase().includes("categoria_id")) {
-          delete fallback1.categoria_id;
-          const retry = await supabase
-            .from("productos")
-            .update(fallback1 as any)
-            .eq("id", payload.id)
-            .select()
-            .maybeSingle();
-          dataRetry1 = retry.data;
-          errRetry1 = retry.error;
+        if (!error) {
+          resultadoData = data;
+          ultimoError = null;
+          break;
         }
 
-        if (errRetry1) {
-          // Fallback 2: Esquema con titulo/precio_base
-          const fallback2: Record<string, any> = {
-            titulo: nombreFinal,
-            descripcion,
-            precio_base: precioNumerico.toFixed(2),
-            stock: stockNumerico.toString(),
-            activo,
-            imagen_url: imagenUrl || null,
-            video_url: videoUrl,
-            updated_at: new Date().toISOString(),
-          };
+        ultimoError = error;
+        console.warn(`Intento ${intento + 1} de UPDATE falló:`, error.message);
 
-          const { data: dataRetry2, error: errRetry2 } = await supabase
-            .from("productos")
-            .update(fallback2 as any)
-            .eq("id", payload.id)
-            .select()
-            .maybeSingle();
-
-          if (errRetry2) {
-            return {
-              success: false,
-              error: `Error de Supabase: ${extraerMensajeError(errRetry2)}`,
-            };
-          }
-          revalidarRutas();
-          return { success: true, data: dataRetry2 };
+        // 2. Comprobar si falta alguna columna
+        const colFaltante = detectarColumnaInexistente(error.message);
+        if (colFaltante && colFaltante in currentPayload) {
+          console.warn(`Omitiendo columna inexistente '${colFaltante}' y reintentando...`);
+          delete currentPayload[colFaltante];
+          continue;
         }
 
-        revalidarRutas();
-        return { success: true, data: dataRetry1 };
+        // Comprobar error específico de categoria_id (UUID syntax o constraint)
+        if (
+          error.message.toLowerCase().includes("categoria_id") &&
+          "categoria_id" in currentPayload
+        ) {
+          console.warn("Omitiendo categoria_id del payload y reintentando...");
+          delete currentPayload.categoria_id;
+          continue;
+        }
+
+        // Si el error no es de columna faltante ni de categoria_id, detener bucle
+        break;
       }
 
-      revalidarRutas();
-      return { success: true, data };
-    } else {
-      // Intentar INSERT con esquema completo
-      let { data, error } = await supabase
-        .from("productos")
-        .insert([dbPayload as any])
-        .select()
-        .maybeSingle();
-
-      // Si falla por columna categoria_id inexistente o error de tipo UUID
-      if (error && error.message.toLowerCase().includes("categoria_id")) {
-        console.warn("Aviso: reintentando insert sin columna categoria_id...");
-        delete dbPayload.categoria_id;
-        const retryCat = await supabase
-          .from("productos")
-          .insert([dbPayload as any])
-          .select()
-          .maybeSingle();
-        data = retryCat.data;
-        error = retryCat.error;
-      }
-
-      if (error) {
-        console.warn("Aviso al insertar con esquema completo, reintentando...", error.message);
-
-        // Fallback 1: Esquema simplificado
-        const fallbackInsert1: Record<string, any> = {
-          nombre: nombreFinal,
-          descripcion,
-          precio_usd: precioNumerico,
-          stock: stockNumerico,
-          activo,
-          imagenes: imagenesArray,
-          imagen_url: imagenUrl || null,
-          video_url: videoUrl,
+      if (ultimoError) {
+        return {
+          success: false,
+          error: `Error de Supabase: ${extraerMensajeError(ultimoError)}`,
         };
-        if (categoriaId !== null) fallbackInsert1.categoria_id = categoriaId;
-
-        let { data: dataRetry1, error: errRetry1 } = await supabase
-          .from("productos")
-          .insert([fallbackInsert1 as any])
-          .select()
-          .maybeSingle();
-
-        if (errRetry1 && errRetry1.message.toLowerCase().includes("categoria_id")) {
-          delete fallbackInsert1.categoria_id;
-          const retry = await supabase
-            .from("productos")
-            .insert([fallbackInsert1 as any])
-            .select()
-            .maybeSingle();
-          dataRetry1 = retry.data;
-          errRetry1 = retry.error;
-        }
-
-        if (errRetry1) {
-          // Fallback 2: Esquema con titulo / precio_base
-          const fallbackInsert2: Record<string, any> = {
-            tienda_id: tiendaId,
-            titulo: nombreFinal,
-            descripcion,
-            precio_base: precioNumerico.toFixed(2),
-            moneda_base: "USD",
-            stock: stockNumerico.toString(),
-            activo,
-            imagen_url: imagenUrl || null,
-            video_url: videoUrl,
-            unidad_medida: "unidad",
-            permite_decimales: false,
-          };
-
-          const { data: dataRetry2, error: errRetry2 } = await supabase
-            .from("productos")
-            .insert([fallbackInsert2 as any])
-            .select()
-            .maybeSingle();
-
-          if (errRetry2) {
-            return {
-              success: false,
-              error: `Error de Supabase: ${extraerMensajeError(errRetry2)}`,
-            };
-          }
-          revalidarRutas();
-          return { success: true, data: dataRetry2 };
-        }
-
-        revalidarRutas();
-        return { success: true, data: dataRetry1 };
       }
 
       revalidarRutas();
-      return { success: true, data };
+      return { success: true, data: resultadoData };
     }
+
+    // -------------------------------------------------------------------------
+    // MODO INSERT
+    // -------------------------------------------------------------------------
+    for (let intento = 0; intento < maxRetries; intento++) {
+      const { data, error } = await supabase
+        .from("productos")
+        .insert([currentPayload as any])
+        .select()
+        .maybeSingle();
+
+      if (!error) {
+        resultadoData = data;
+        ultimoError = null;
+        break;
+      }
+
+      ultimoError = error;
+      console.warn(`Intento ${intento + 1} de INSERT falló:`, error.message);
+
+      // 2. Comprobar si falta alguna columna
+      const colFaltante = detectarColumnaInexistente(error.message);
+      if (colFaltante && colFaltante in currentPayload) {
+        console.warn(`Omitiendo columna inexistente '${colFaltante}' y reintentando...`);
+        delete currentPayload[colFaltante];
+        continue;
+      }
+
+      // Comprobar error específico de categoria_id
+      if (
+        error.message.toLowerCase().includes("categoria_id") &&
+        "categoria_id" in currentPayload
+      ) {
+        console.warn("Omitiendo categoria_id del payload y reintentando...");
+        delete currentPayload.categoria_id;
+        continue;
+      }
+
+      // Si el error no es de columna faltante, detener bucle
+      break;
+    }
+
+    if (ultimoError) {
+      return {
+        success: false,
+        error: `Error de Supabase: ${extraerMensajeError(ultimoError)}`,
+      };
+    }
+
+    revalidarRutas();
+    return { success: true, data: resultadoData };
   } catch (err: unknown) {
     const errorMsg = extraerMensajeError(err);
     console.error("Excepción en guardarProducto:", err);

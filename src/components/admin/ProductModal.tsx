@@ -231,6 +231,7 @@ export function ProductModal({
         categoria_id: categoriaIdLimpia,
         imagen_url: trimmedImg || null,
         imagenes: imagenesArray,
+        imagen: trimmedImg || null,
         video_url: videoUrl.trim() || null,
         en_oferta: enOferta,
         precio_oferta: enOferta && precioOferta ? sanitizarNumero(precioOferta, 0) : null,

@@ -127,6 +127,7 @@ export type ProductoRow = {
   activo: boolean;
   imagen_url?: string | null;
   imagenes?: string[] | null;
+  imagen?: string | null;
   video_url?: string | null;
   en_oferta?: boolean | null;
   precio_oferta?: string | null;
@@ -150,6 +151,7 @@ export type ProductoInsert = {
   activo?: boolean;
   imagen_url?: string | null;
   imagenes?: string[] | null;
+  imagen?: string | null;
   video_url?: string | null;
   en_oferta?: boolean | null;
   precio_oferta?: string | number | null;
@@ -173,6 +175,7 @@ export type ProductoUpdate = {
   activo?: boolean;
   imagen_url?: string | null;
   imagenes?: string[] | null;
+  imagen?: string | null;
   video_url?: string | null;
   en_oferta?: boolean | null;
   precio_oferta?: string | number | null;
@@ -565,6 +568,7 @@ export type ProductoDbRow = {
   categoria_id?: string | null;
   imagen_url?: string | null;
   imagenes?: string[] | null;
+  imagen?: string | null;
   en_oferta?: boolean | null;
   precio_oferta?: number | string | null;
   created_at?: string;
@@ -582,6 +586,7 @@ export type ProductoDbInsert = {
   categoria_id?: string | null;
   imagen_url?: string | null;
   imagenes?: string[] | null;
+  imagen?: string | null;
   en_oferta?: boolean | null;
   precio_oferta?: number | string | null;
   created_at?: string;
@@ -599,6 +604,7 @@ export type ProductoDbUpdate = {
   categoria_id?: string | null;
   imagen_url?: string | null;
   imagenes?: string[] | null;
+  imagen?: string | null;
   en_oferta?: boolean | null;
   precio_oferta?: number | string | null;
   created_at?: string;
