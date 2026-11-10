@@ -87,7 +87,6 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
     } else if (imagenUrl) {
       imagenesArray = [imagenUrl];
     } else {
-      // Default array vacío según instrucción estricta
       imagenesArray = [];
     }
 
@@ -96,19 +95,27 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
       process.env.NEXT_PUBLIC_TIENDA_ID ||
       "00000000-0000-0000-0000-000000000001";
 
-    const categoriaId = payload.categoria_id && payload.categoria_id !== "all" && payload.categoria_id !== ""
-      ? payload.categoria_id
-      : null;
+    // 5. Sanitización estricta de categoria_id (evitar cadenas vacías, convertirlas a null)
+    let categoriaId: string | null = null;
+    if (payload.categoria_id && typeof payload.categoria_id === "string") {
+      const cleanCat = payload.categoria_id.trim();
+      if (
+        cleanCat !== "" &&
+        cleanCat !== "all" &&
+        cleanCat !== "null" &&
+        cleanCat !== "undefined"
+      ) {
+        categoriaId = cleanCat;
+      }
+    }
 
     const activo = payload.activo ?? true;
     const videoUrl = payload.video_url?.trim() || null;
     const descripcion = payload.descripcion?.trim() || null;
 
-    // Payload de compatibilidad dual: envía tanto nombre/precio_usd como titulo/precio_base
-    // e imagenes como array [] e imagen_url como texto
+    // Payload de compatibilidad dual
     const dbPayload: Record<string, any> = {
       tienda_id: tiendaId,
-      categoria_id: categoriaId,
       // Nombres
       nombre: nombreFinal,
       titulo: nombreFinal,
@@ -130,20 +137,40 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
       updated_at: new Date().toISOString(),
     };
 
+    // Solo incluir categoria_id si tiene un valor no nulo
+    if (categoriaId !== null) {
+      dbPayload.categoria_id = categoriaId;
+    } else {
+      dbPayload.categoria_id = null;
+    }
+
     if (payload.id) {
       // Intentar UPDATE con todas las columnas
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from("productos")
         .update(dbPayload as any)
         .eq("id", payload.id)
         .select()
         .maybeSingle();
 
+      // Si falla por columna categoria_id inexistente o error de tipo UUID
+      if (error && error.message.toLowerCase().includes("categoria_id")) {
+        console.warn("Aviso: reintentando update sin columna categoria_id...");
+        delete dbPayload.categoria_id;
+        const retryCat = await supabase
+          .from("productos")
+          .update(dbPayload as any)
+          .eq("id", payload.id)
+          .select()
+          .maybeSingle();
+        data = retryCat.data;
+        error = retryCat.error;
+      }
+
       if (error) {
-        // Si falló por alguna columna que no existe en el esquema remoto, reintentar con esquema alternativo
         console.warn("Aviso al actualizar con esquema completo, reintentando...", error.message);
 
-        // Fallback 1: Esquema simplificado (nombre, precio_usd, stock, imagenes)
+        // Fallback 1: Esquema simplificado
         const fallback1: Record<string, any> = {
           nombre: nombreFinal,
           descripcion,
@@ -153,16 +180,28 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
           imagenes: imagenesArray,
           imagen_url: imagenUrl || null,
           video_url: videoUrl,
-          categoria_id: categoriaId,
           updated_at: new Date().toISOString(),
         };
+        if (categoriaId !== null) fallback1.categoria_id = categoriaId;
 
-        const { data: dataRetry1, error: errRetry1 } = await supabase
+        let { data: dataRetry1, error: errRetry1 } = await supabase
           .from("productos")
           .update(fallback1 as any)
           .eq("id", payload.id)
           .select()
           .maybeSingle();
+
+        if (errRetry1 && errRetry1.message.toLowerCase().includes("categoria_id")) {
+          delete fallback1.categoria_id;
+          const retry = await supabase
+            .from("productos")
+            .update(fallback1 as any)
+            .eq("id", payload.id)
+            .select()
+            .maybeSingle();
+          dataRetry1 = retry.data;
+          errRetry1 = retry.error;
+        }
 
         if (errRetry1) {
           // Fallback 2: Esquema con titulo/precio_base
@@ -174,7 +213,6 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
             activo,
             imagen_url: imagenUrl || null,
             video_url: videoUrl,
-            categoria_id: categoriaId,
             updated_at: new Date().toISOString(),
           };
 
@@ -203,11 +241,24 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
       return { success: true, data };
     } else {
       // Intentar INSERT con esquema completo
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from("productos")
         .insert([dbPayload as any])
         .select()
         .maybeSingle();
+
+      // Si falla por columna categoria_id inexistente o error de tipo UUID
+      if (error && error.message.toLowerCase().includes("categoria_id")) {
+        console.warn("Aviso: reintentando insert sin columna categoria_id...");
+        delete dbPayload.categoria_id;
+        const retryCat = await supabase
+          .from("productos")
+          .insert([dbPayload as any])
+          .select()
+          .maybeSingle();
+        data = retryCat.data;
+        error = retryCat.error;
+      }
 
       if (error) {
         console.warn("Aviso al insertar con esquema completo, reintentando...", error.message);
@@ -222,14 +273,25 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
           imagenes: imagenesArray,
           imagen_url: imagenUrl || null,
           video_url: videoUrl,
-          categoria_id: categoriaId,
         };
+        if (categoriaId !== null) fallbackInsert1.categoria_id = categoriaId;
 
-        const { data: dataRetry1, error: errRetry1 } = await supabase
+        let { data: dataRetry1, error: errRetry1 } = await supabase
           .from("productos")
           .insert([fallbackInsert1 as any])
           .select()
           .maybeSingle();
+
+        if (errRetry1 && errRetry1.message.toLowerCase().includes("categoria_id")) {
+          delete fallbackInsert1.categoria_id;
+          const retry = await supabase
+            .from("productos")
+            .insert([fallbackInsert1 as any])
+            .select()
+            .maybeSingle();
+          dataRetry1 = retry.data;
+          errRetry1 = retry.error;
+        }
 
         if (errRetry1) {
           // Fallback 2: Esquema con titulo / precio_base
@@ -243,7 +305,6 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
             activo,
             imagen_url: imagenUrl || null,
             video_url: videoUrl,
-            categoria_id: categoriaId,
             unidad_medida: "unidad",
             permite_decimales: false,
           };

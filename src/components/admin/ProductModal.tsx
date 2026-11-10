@@ -1,10 +1,25 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, Image as ImageIcon, Video, DollarSign, Package, Tag, Save, RefreshCw } from "lucide-react";
+import {
+  X,
+  Image as ImageIcon,
+  Video,
+  DollarSign,
+  Package,
+  Tag,
+  Save,
+  RefreshCw,
+  UploadCloud,
+  CheckCircle2,
+  Film,
+  Link2,
+  Loader2,
+} from "lucide-react";
 import { ProductoRow, CategoriaRow } from "@/types/database.types";
 import { convertirUsdaVes, formatoVES, sanitizarNumero } from "@/utils/currency";
 import { guardarProducto } from "@/actions/products";
+import { createClient } from "@/lib/supabase/client";
 
 interface ProductModalProps {
   isOpen: boolean;
@@ -57,6 +72,12 @@ export function ProductModal({
   const [precioOferta, setPrecioOferta] = useState("");
   const [activo, setActivo] = useState(true);
 
+  // Estados para subida directa de archivos a Supabase Storage
+  const [subiendoImagen, setSubiendoImagen] = useState(false);
+  const [subiendoVideo, setSubiendoVideo] = useState(false);
+  const [modoImagen, setModoImagen] = useState<"upload" | "url">("upload");
+  const [modoVideo, setModoVideo] = useState<"upload" | "url">("upload");
+
   useEffect(() => {
     if (producto) {
       setTitulo(producto.titulo || producto.nombre || "");
@@ -80,10 +101,12 @@ export function ProductModal({
           : ""
       );
       setActivo(producto.activo ?? true);
+      if (img) setModoImagen("upload");
+      if (producto.video_url) setModoVideo("upload");
     } else {
       setTitulo("");
       setDescripcion("");
-      setCategoriaId(categorias[0]?.id || "");
+      setCategoriaId("");
       setPrecioBase("");
       setUnidadMedida("unidad");
       setStock("10");
@@ -92,10 +115,74 @@ export function ProductModal({
       setEnOferta(false);
       setPrecioOferta("");
       setActivo(true);
+      setModoImagen("upload");
+      setModoVideo("upload");
     }
   }, [producto, categorias, isOpen]);
 
   if (!isOpen) return null;
+
+  /**
+   * Manejador de subida directa de archivos a Supabase Storage (Bucket 'productos')
+   */
+  async function handleUploadArchivo(
+    e: React.ChangeEvent<HTMLInputElement>,
+    tipo: "imagen" | "video"
+  ) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (tipo === "imagen") {
+      setSubiendoImagen(true);
+    } else {
+      setSubiendoVideo(true);
+    }
+
+    try {
+      const supabase = createClient();
+      const ext = file.name.split(".").pop() || (tipo === "imagen" ? "jpg" : "mp4");
+      const cleanBase = file.name
+        .substring(0, file.name.lastIndexOf(".") || file.name.length)
+        .replace(/[^a-zA-Z0-9_-]/g, "_")
+        .toLowerCase();
+      const fileName = `${tipo}s/${Date.now()}_${cleanBase}.${ext}`;
+
+      const { data, error } = await supabase.storage
+        .from("productos")
+        .upload(fileName, file, {
+          cacheControl: "3600",
+          upsert: true,
+        });
+
+      if (error) {
+        console.error("Error al subir a Supabase Storage:", error);
+        showToast(`Error al subir ${tipo}: ${error.message}`, "error");
+        return;
+      }
+
+      const { data: publicData } = supabase.storage
+        .from("productos")
+        .getPublicUrl(data.path);
+
+      if (publicData?.publicUrl) {
+        if (tipo === "imagen") {
+          setImagenUrl(publicData.publicUrl);
+          showToast("Imagen subida exitosamente a Supabase Storage", "success");
+        } else {
+          setVideoUrl(publicData.publicUrl);
+          showToast("Video subido exitosamente a Supabase Storage", "success");
+        }
+      }
+    } catch (err: unknown) {
+      const msg = extraerMensajeError(err);
+      console.error("Excepción en upload:", err);
+      showToast(`Error al procesar archivo: ${msg}`, "error");
+    } finally {
+      if (tipo === "imagen") setSubiendoImagen(false);
+      if (tipo === "video") setSubiendoVideo(false);
+      e.target.value = "";
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -123,7 +210,16 @@ export function ProductModal({
       const trimmedImg = imagenUrl.trim();
       const imagenesArray: string[] = trimmedImg ? [trimmedImg] : [];
 
-      // 3. Ejecutar Server Action con compatibilidad dual
+      // 3. Sanitizar categoria_id: si está vacío o no seleccionado, enviar null estricto
+      const categoriaIdLimpia =
+        categoriaId &&
+        categoriaId !== "all" &&
+        categoriaId.trim() !== "" &&
+        categoriaId.trim() !== "null"
+          ? categoriaId.trim()
+          : null;
+
+      // 4. Ejecutar Server Action con compatibilidad dual
       const res = await guardarProducto({
         id: producto?.id,
         nombre: titulo.trim(),
@@ -132,7 +228,7 @@ export function ProductModal({
         precio_usd: precioNum,
         precio_base: precioNum.toFixed(2),
         stock: sanitizarNumero(stock, 0),
-        categoria_id: categoriaId || null,
+        categoria_id: categoriaIdLimpia,
         imagen_url: trimmedImg || null,
         imagenes: imagenesArray,
         video_url: videoUrl.trim() || null,
@@ -143,7 +239,6 @@ export function ProductModal({
       });
 
       if (!res.success) {
-        // 3. Manejo de errores detallado: mostrar mensaje exacto de Supabase
         const detalle = res.error || "Error no especificado por la base de datos";
         console.error("Error al guardar producto:", detalle);
         showToast(`Error al guardar: ${detalle}`, "error");
@@ -208,7 +303,7 @@ export function ProductModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                Categoría
+                Categoría (Opcional)
               </label>
               <select
                 value={categoriaId}
@@ -336,55 +431,206 @@ export function ProductModal({
             )}
           </div>
 
-          {/* URLs de Multimedia (Imagen y Video) */}
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                URL de Imagen Principal
-              </label>
+          {/* MULTIMEDIA: FOTO PRINCIPAL (SUBIDA DIRECTA O URL MANUAL) */}
+          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                <ImageIcon className="w-4 h-4" />
+                Imagen Principal del Producto
+              </span>
+              <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setModoImagen("upload")}
+                  className={`px-2 py-1 rounded-md transition-colors ${
+                    modoImagen === "upload"
+                      ? "bg-cyan-500 text-slate-950 font-bold"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Subir desde PC
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModoImagen("url")}
+                  className={`px-2 py-1 rounded-md transition-colors ${
+                    modoImagen === "url"
+                      ? "bg-cyan-500 text-slate-950 font-bold"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Pegar URL
+                </button>
+              </div>
+            </div>
+
+            {modoImagen === "upload" ? (
+              <div>
+                <label className="relative flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-700 hover:border-cyan-500 rounded-xl cursor-pointer bg-slate-900/50 hover:bg-slate-900 transition-all text-center">
+                  {subiendoImagen ? (
+                    <div className="flex flex-col items-center py-2 text-cyan-400">
+                      <Loader2 className="w-7 h-7 animate-spin mb-2" />
+                      <span className="text-xs font-semibold">Subiendo imagen a Supabase Storage...</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center py-1">
+                      <UploadCloud className="w-8 h-8 text-cyan-400 mb-1.5" />
+                      <span className="text-xs font-semibold text-white">
+                        Haz clic aquí para seleccionar imagen desde tu computadora
+                      </span>
+                      <span className="text-[11px] text-slate-400 mt-0.5">
+                        Formatos soportados: JPG, PNG, WEBP (Hasta 10MB)
+                      </span>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={subiendoImagen}
+                    onChange={(e) => handleUploadArchivo(e, "imagen")}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            ) : (
               <div className="relative">
-                <ImageIcon className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <Link2 className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                 <input
                   type="url"
                   value={imagenUrl}
                   onChange={(e) => setImagenUrl(e.target.value)}
-                  placeholder="https://images.unsplash.com/... o enlace de Supabase Storage"
-                  className="w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-cyan-500"
+                  placeholder="https://images.unsplash.com/... o enlace directo de imagen"
+                  className="w-full pl-10 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-cyan-500"
                 />
-              </div>
-            </div>
-
-            {imagenUrl && (
-              <div className="flex items-center gap-3 p-2 bg-slate-950/60 rounded-xl border border-slate-800">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={imagenUrl}
-                  alt="Vista previa"
-                  className="w-14 h-14 object-cover rounded-lg border border-slate-700"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src =
-                      "https://placehold.co/100x100/1e293b/ffffff?text=Error+Img";
-                  }}
-                />
-                <span className="text-xs text-slate-400">Vista previa de imagen cargada</span>
               </div>
             )}
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                URL de Video Demostrativo (Opcional)
-              </label>
+            {/* Vista previa de la imagen cargada */}
+            {imagenUrl && (
+              <div className="flex items-center justify-between p-2.5 bg-slate-900/80 rounded-xl border border-slate-800">
+                <div className="flex items-center gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imagenUrl}
+                    alt="Vista previa"
+                    className="w-12 h-12 object-cover rounded-lg border border-slate-700"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src =
+                        "https://placehold.co/100x100/1e293b/ffffff?text=Error+Img";
+                    }}
+                  />
+                  <div>
+                    <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Imagen lista
+                    </span>
+                    <span className="text-[11px] text-slate-400 truncate max-w-xs block font-mono">
+                      {imagenUrl}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setImagenUrl("")}
+                  className="p-1.5 text-slate-400 hover:text-red-400 rounded-lg transition-colors"
+                  title="Quitar imagen"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* MULTIMEDIA: VIDEO DEMOSTRATIVO (SUBIDA DIRECTA O URL MANUAL) */}
+          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Film className="w-4 h-4" />
+                Video Demostrativo (Opcional)
+              </span>
+              <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setModoVideo("upload")}
+                  className={`px-2 py-1 rounded-md transition-colors ${
+                    modoVideo === "upload"
+                      ? "bg-cyan-500 text-slate-950 font-bold"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Subir desde PC
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModoVideo("url")}
+                  className={`px-2 py-1 rounded-md transition-colors ${
+                    modoVideo === "url"
+                      ? "bg-cyan-500 text-slate-950 font-bold"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Pegar URL
+                </button>
+              </div>
+            </div>
+
+            {modoVideo === "upload" ? (
+              <div>
+                <label className="relative flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-700 hover:border-cyan-500 rounded-xl cursor-pointer bg-slate-900/50 hover:bg-slate-900 transition-all text-center">
+                  {subiendoVideo ? (
+                    <div className="flex flex-col items-center py-2 text-cyan-400">
+                      <Loader2 className="w-7 h-7 animate-spin mb-2" />
+                      <span className="text-xs font-semibold">Subiendo video a Supabase Storage...</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center py-1">
+                      <UploadCloud className="w-8 h-8 text-cyan-400 mb-1.5" />
+                      <span className="text-xs font-semibold text-white">
+                        Haz clic aquí para seleccionar video desde tu computadora
+                      </span>
+                      <span className="text-[11px] text-slate-400 mt-0.5">
+                        Formatos soportados: MP4, WebM (Hasta 50MB)
+                      </span>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="video/*"
+                    disabled={subiendoVideo}
+                    onChange={(e) => handleUploadArchivo(e, "video")}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            ) : (
               <div className="relative">
                 <Video className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                 <input
                   type="url"
                   value={videoUrl}
                   onChange={(e) => setVideoUrl(e.target.value)}
-                  placeholder="https://youtube.com/watch?v=... o video directo .mp4"
-                  className="w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-cyan-500"
+                  placeholder="https://youtube.com/watch?v=... o enlace de video"
+                  className="w-full pl-10 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-cyan-500"
                 />
               </div>
-            </div>
+            )}
+
+            {videoUrl && (
+              <div className="flex items-center justify-between p-2.5 bg-slate-900/80 rounded-xl border border-slate-800">
+                <div className="flex items-center gap-2 text-xs text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span className="font-semibold truncate max-w-xs">{videoUrl}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setVideoUrl("")}
+                  className="p-1 text-slate-400 hover:text-red-400 rounded transition-colors"
+                  title="Quitar video"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Toggle Activo */}
@@ -408,14 +654,14 @@ export function ProductModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={saving}
+              disabled={saving || subiendoImagen || subiendoVideo}
               className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-sm font-medium transition-colors"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || subiendoImagen || subiendoVideo}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-semibold text-sm shadow-lg shadow-cyan-500/20 active:scale-95 transition-all disabled:opacity-50"
             >
               {saving ? (

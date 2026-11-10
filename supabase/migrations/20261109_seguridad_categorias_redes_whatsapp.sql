@@ -57,3 +57,23 @@ where not exists (select 1 from public.categorias where nombre = 'Ropa y Calzado
 insert into public.categorias (nombre, descripcion, orden)
 select 'Hogar y Cocina', 'Artículos y utensilios para el hogar', 3
 where not exists (select 1 from public.categorias where nombre = 'Hogar y Cocina');
+
+-- 4. Bucket de Almacenamiento Supabase Storage ('productos')
+insert into storage.buckets (id, name, public)
+values ('productos', 'productos', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists "Public Access to Productos Bucket" on storage.objects;
+create policy "Public Access to Productos Bucket"
+on storage.objects for select
+using (bucket_id = 'productos');
+
+drop policy if exists "Allow Upload to Productos Bucket" on storage.objects;
+create policy "Allow Upload to Productos Bucket"
+on storage.objects for insert
+with check (bucket_id = 'productos');
+
+drop policy if exists "Allow Update to Productos Bucket" on storage.objects;
+create policy "Allow Update to Productos Bucket"
+on storage.objects for update
+using (bucket_id = 'productos');
