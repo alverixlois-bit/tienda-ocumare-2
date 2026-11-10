@@ -17,7 +17,7 @@ import {
 import { ProductoRow, CategoriaRow } from "@/types/database.types";
 import { createClient } from "@/lib/supabase/client";
 import { ProductModal } from "./ProductModal";
-import { convertirUsdaVes, formatoUSD, formatoVES } from "@/utils/currency";
+import { convertirUsdaVes, formatoUSD, formatoVES, sanitizarNumero } from "@/utils/currency";
 import { obtenerCategorias } from "@/actions/categories";
 
 interface InventoryTabProps {
@@ -55,31 +55,31 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
       }
 
       // 2. Cargar Productos
-      const { data: prodData, error: prodErr } = await supabase
+      let { data: prodData, error: prodErr } = await supabase
         .from("productos")
         .select("*")
-        .eq("tienda_id", tiendaId)
         .order("created_at", { ascending: false });
 
       if (prodData && prodData.length > 0) {
         setProductos(prodData);
       } else {
-        // Fallback datos demo si aún no se han creado en Supabase
         setProductos([]);
       }
 
       if (prodErr) {
         console.warn("Aviso al consultar productos:", prodErr.message);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Error al cargar inventario:", err);
-      showToast("Error al conectar con el inventario de Supabase", "error");
+      const msg = err && typeof err === "object" && "message" in err ? String((err as any).message) : "Error al conectar con Supabase";
+      showToast(`Error al cargar inventario: ${msg}`, "error");
     } finally {
       setLoading(false);
     }
   }
 
   async function toggleActivo(prod: ProductoRow) {
+    const nombreMostrar = prod.titulo || prod.nombre || "Producto";
     const nuevoEstado = !prod.activo;
     // Optimistic update
     setProductos((prev) =>
@@ -98,8 +98,8 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
 
       showToast(
         nuevoEstado
-          ? `"${prod.titulo}" ahora está VISIBLE en el catálogo`
-          : `"${prod.titulo}" ha sido OCULTADO del catálogo`,
+          ? `"${nombreMostrar}" ahora está VISIBLE en el catálogo`
+          : `"${nombreMostrar}" ha sido OCULTADO del catálogo`,
         "info"
       );
     } catch (err: unknown) {
@@ -107,8 +107,8 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
       setProductos((prev) =>
         prev.map((p) => (p.id === prod.id ? { ...p, activo: prod.activo } : p))
       );
-      const msg = err instanceof Error ? err.message : "Error al actualizar";
-      showToast(msg, "error");
+      const msg = err && typeof err === "object" && "message" in err ? String((err as any).message) : "Error al actualizar";
+      showToast(`Error al actualizar estado: ${msg}`, "error");
     }
   }
 
@@ -122,8 +122,8 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
       setProductos((prev) => prev.filter((p) => p.id !== id));
       showToast(`Producto "${titulo}" eliminado exitosamente`, "success");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Error al eliminar";
-      showToast(msg, "error");
+      const msg = err && typeof err === "object" && "message" in err ? String((err as any).message) : "Error al eliminar";
+      showToast(`Error al eliminar: ${msg}`, "error");
     }
   }
 
@@ -267,9 +267,12 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredProducts.map((prod) => {
-            const precioVes = convertirUsdaVes(prod.precio_base, tasaBcv);
-            const stockNum = parseFloat(prod.stock || "0");
+            const precioNumerico = sanitizarNumero(prod.precio_base ?? prod.precio_usd, 0);
+            const precioVes = convertirUsdaVes(precioNumerico, tasaBcv);
+            const stockNum = parseFloat(prod.stock ? prod.stock.toString() : "0");
             const esStockBajo = stockNum <= 3;
+            const tituloMostrar = prod.titulo || prod.nombre || "Producto sin nombre";
+            const imgMostrar = prod.imagen_url || (prod.imagenes && prod.imagenes[0]) || "";
 
             return (
               <div
@@ -284,11 +287,11 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
                   {/* Encabezado de Tarjeta e Imagen */}
                   <div className="flex gap-3 mb-3">
                     <div className="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
-                      {prod.imagen_url ? (
+                      {imgMostrar ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={prod.imagen_url}
-                          alt={prod.titulo}
+                          src={imgMostrar}
+                          alt={tituloMostrar}
                           className="w-full h-full object-cover"
                           onError={(e) => {
                             (e.target as HTMLImageElement).src =
@@ -302,8 +305,8 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-1">
-                        <h4 className="font-semibold text-sm text-white truncate" title={prod.titulo}>
-                          {prod.titulo}
+                        <h4 className="font-semibold text-sm text-white truncate" title={tituloMostrar}>
+                          {tituloMostrar}
                         </h4>
                         {prod.en_oferta && (
                           <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
@@ -338,7 +341,7 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
                           }`}
                         >
                           {esStockBajo && <AlertTriangle className="w-3 h-3 text-red-400 inline" />}
-                          Stock: {stockNum} {prod.unidad_medida}
+                          Stock: {stockNum} {prod.unidad_medida || "unidad"}
                         </span>
                       </div>
                     </div>
@@ -351,7 +354,7 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
                         Precio Base USD
                       </span>
                       <span className="text-base font-extrabold text-white">
-                        {formatoUSD(prod.precio_base)}
+                        {formatoUSD(precioNumerico)}
                       </span>
                     </div>
 

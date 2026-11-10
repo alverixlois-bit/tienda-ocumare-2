@@ -114,16 +114,19 @@ export type ProductoRow = {
   tienda_id: string;
   categoria_id: string | null;
   titulo: string;
+  nombre?: string;
   descripcion: string | null;
   /** Moneda base exacta fijada por el vendedor. */
   moneda_base: MonedaBase;
   /** Precio exacto en `moneda_base`. */
   precio_base: string;
+  precio_usd?: number | string;
   unidad_medida: string;
   permite_decimales: boolean;
   stock: string;
   activo: boolean;
   imagen_url?: string | null;
+  imagenes?: string[] | null;
   video_url?: string | null;
   en_oferta?: boolean | null;
   precio_oferta?: string | null;
@@ -135,18 +138,21 @@ export type ProductoInsert = {
   id?: string;
   tienda_id: string;
   categoria_id?: string | null;
-  titulo: string;
+  titulo?: string;
+  nombre?: string;
   descripcion?: string | null;
   moneda_base?: MonedaBase;
-  precio_base: string;
-  unidad_medida: string;
+  precio_base?: string;
+  precio_usd?: number | string;
+  unidad_medida?: string;
   permite_decimales?: boolean;
-  stock?: string;
+  stock?: string | number;
   activo?: boolean;
   imagen_url?: string | null;
+  imagenes?: string[] | null;
   video_url?: string | null;
   en_oferta?: boolean | null;
-  precio_oferta?: string | null;
+  precio_oferta?: string | number | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -156,17 +162,20 @@ export type ProductoUpdate = {
   tienda_id?: string;
   categoria_id?: string | null;
   titulo?: string;
+  nombre?: string;
   descripcion?: string | null;
   moneda_base?: MonedaBase;
   precio_base?: string;
+  precio_usd?: number | string;
   unidad_medida?: string;
   permite_decimales?: boolean;
-  stock?: string;
+  stock?: string | number;
   activo?: boolean;
   imagen_url?: string | null;
+  imagenes?: string[] | null;
   video_url?: string | null;
   en_oferta?: boolean | null;
-  precio_oferta?: string | null;
+  precio_oferta?: string | number | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -553,7 +562,13 @@ export type ProductoDbRow = {
   stock: number | string;
   video_url: string | null;
   activo: boolean;
+  categoria_id?: string | null;
+  imagen_url?: string | null;
+  imagenes?: string[] | null;
+  en_oferta?: boolean | null;
+  precio_oferta?: number | string | null;
   created_at?: string;
+  updated_at?: string;
 };
 
 export type ProductoDbInsert = {
@@ -564,7 +579,13 @@ export type ProductoDbInsert = {
   stock?: number | string;
   video_url?: string | null;
   activo?: boolean;
+  categoria_id?: string | null;
+  imagen_url?: string | null;
+  imagenes?: string[] | null;
+  en_oferta?: boolean | null;
+  precio_oferta?: number | string | null;
   created_at?: string;
+  updated_at?: string;
 };
 
 export type ProductoDbUpdate = {
@@ -575,7 +596,13 @@ export type ProductoDbUpdate = {
   stock?: number | string;
   video_url?: string | null;
   activo?: boolean;
+  categoria_id?: string | null;
+  imagen_url?: string | null;
+  imagenes?: string[] | null;
+  en_oferta?: boolean | null;
+  precio_oferta?: number | string | null;
   created_at?: string;
+  updated_at?: string;
 };
 
 export type PedidoDbRow = {

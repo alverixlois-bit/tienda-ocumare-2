@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect } from "react";
 import { X, Image as ImageIcon, Video, DollarSign, Package, Tag, Save, RefreshCw } from "lucide-react";
-import { ProductoRow, ProductoInsert, ProductoUpdate, CategoriaRow } from "@/types/database.types";
-import { createClient } from "@/lib/supabase/client";
-import { convertirUsdaVes, formatoVES } from "@/utils/currency";
+import { ProductoRow, CategoriaRow } from "@/types/database.types";
+import { convertirUsdaVes, formatoVES, sanitizarNumero } from "@/utils/currency";
+import { guardarProducto } from "@/actions/products";
 
 interface ProductModalProps {
   isOpen: boolean;
@@ -14,6 +14,25 @@ interface ProductModalProps {
   tasaBcv: number;
   categorias: CategoriaRow[];
   showToast: (msg: string, type: "success" | "error" | "info") => void;
+}
+
+function extraerMensajeError(err: unknown): string {
+  if (!err) return "Error desconocido";
+  if (typeof err === "string") return err;
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object") {
+    const obj = err as Record<string, any>;
+    const mensaje = obj.message || obj.error_description || obj.error;
+    const detalles = obj.details ? ` (${obj.details})` : "";
+    const hint = obj.hint ? ` - Sugerencia: ${obj.hint}` : "";
+    if (mensaje) return `${mensaje}${detalles}${hint}`;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return "Error de base de datos en Supabase";
+    }
+  }
+  return String(err);
 }
 
 export function ProductModal({
@@ -38,20 +57,28 @@ export function ProductModal({
   const [precioOferta, setPrecioOferta] = useState("");
   const [activo, setActivo] = useState(true);
 
-  const supabase = createClient();
-
   useEffect(() => {
     if (producto) {
-      setTitulo(producto.titulo || "");
+      setTitulo(producto.titulo || producto.nombre || "");
       setDescripcion(producto.descripcion || "");
       setCategoriaId(producto.categoria_id || "");
-      setPrecioBase(producto.precio_base || "0.00");
+      setPrecioBase(
+        producto.precio_base ||
+        (producto.precio_usd !== undefined && producto.precio_usd !== null
+          ? producto.precio_usd.toString()
+          : "0.00")
+      );
       setUnidadMedida(producto.unidad_medida || "unidad");
-      setStock(producto.stock || "0");
-      setImagenUrl(producto.imagen_url || "");
+      setStock(producto.stock ? producto.stock.toString() : "0");
+      const img = producto.imagen_url || (producto.imagenes && producto.imagenes[0]) || "";
+      setImagenUrl(img);
       setVideoUrl(producto.video_url || "");
       setEnOferta(Boolean(producto.en_oferta));
-      setPrecioOferta(producto.precio_oferta || "");
+      setPrecioOferta(
+        producto.precio_oferta !== undefined && producto.precio_oferta !== null
+          ? producto.precio_oferta.toString()
+          : ""
+      );
       setActivo(producto.activo ?? true);
     } else {
       setTitulo("");
@@ -74,103 +101,72 @@ export function ProductModal({
     e.preventDefault();
     setSaving(true);
 
-    const tiendaId = process.env.NEXT_PUBLIC_TIENDA_ID || "11111111-1111-4111-8111-111111111111";
-
-    if (!titulo.trim()) {
-      showToast("El nombre del producto es obligatorio", "error");
-      setSaving(false);
-      return;
-    }
-
-    const precioNum = parseFloat(precioBase);
-    if (isNaN(precioNum) || precioNum < 0) {
-      showToast("El precio en USD debe ser válido", "error");
-      setSaving(false);
-      return;
-    }
-
-    const insertPayload: ProductoInsert = {
-      tienda_id: tiendaId,
-      categoria_id: categoriaId || null,
-      titulo: titulo.trim(),
-      descripcion: descripcion.trim() || null,
-      moneda_base: "USD",
-      precio_base: parseFloat(precioBase).toFixed(2),
-      unidad_medida: unidadMedida,
-      permite_decimales: unidadMedida === "kg" || unidadMedida === "litro",
-      stock: parseFloat(stock || "0").toFixed(0),
-      activo: activo,
-      imagen_url: imagenUrl.trim() || null,
-      video_url: videoUrl.trim() || null,
-      en_oferta: enOferta,
-      precio_oferta: enOferta && precioOferta ? parseFloat(precioOferta).toFixed(2) : null,
-      updated_at: new Date().toISOString(),
-    };
-
     try {
-      if (producto?.id) {
-        // UPDATE
-        const { error } = await supabase
-          .from("productos")
-          .update(insertPayload as ProductoUpdate)
-          .eq("id", producto.id);
+      const tiendaId =
+        process.env.NEXT_PUBLIC_TIENDA_ID || "00000000-0000-0000-0000-000000000001";
 
-        if (error) {
-          // Reintentar con columnas base si las columnas nuevas no están creadas en DB
-          console.warn("Reintentando con columnas base...", error.message);
-          const { error: retryError } = await supabase
-            .from("productos")
-            .update({
-              titulo: insertPayload.titulo,
-              descripcion: insertPayload.descripcion,
-              precio_base: insertPayload.precio_base,
-              stock: insertPayload.stock,
-              activo: insertPayload.activo,
-              categoria_id: insertPayload.categoria_id,
-              unidad_medida: insertPayload.unidad_medida,
-            })
-            .eq("id", producto.id);
-
-          if (retryError) throw retryError;
-        }
-        showToast("Producto actualizado exitosamente", "success");
-      } else {
-        // INSERT
-        const { error } = await supabase.from("productos").insert([insertPayload]);
-
-        if (error) {
-          console.warn("Reintentando insert con columnas base...", error.message);
-          const { error: retryError } = await supabase.from("productos").insert([
-            {
-              tienda_id: tiendaId,
-              categoria_id: insertPayload.categoria_id,
-              titulo: insertPayload.titulo,
-              descripcion: insertPayload.descripcion,
-              moneda_base: "USD",
-              precio_base: insertPayload.precio_base,
-              unidad_medida: insertPayload.unidad_medida,
-              permite_decimales: false,
-              stock: insertPayload.stock,
-              activo: insertPayload.activo,
-            },
-          ]);
-          if (retryError) throw retryError;
-        }
-        showToast("Producto creado exitosamente en el inventario", "success");
+      if (!titulo.trim()) {
+        showToast("El nombre del producto es obligatorio", "error");
+        setSaving(false);
+        return;
       }
 
+      // 1. Sanitizar número de precio USD (reemplaza coma por punto y parseFloat)
+      const precioNum = sanitizarNumero(precioBase, -1);
+      if (precioNum < 0) {
+        showToast("Por favor ingresa un precio válido en USD", "error");
+        setSaving(false);
+        return;
+      }
+
+      // 2. Sanitizar imágenes (array vacío [] si no se ingresó URL)
+      const trimmedImg = imagenUrl.trim();
+      const imagenesArray: string[] = trimmedImg ? [trimmedImg] : [];
+
+      // 3. Ejecutar Server Action con compatibilidad dual
+      const res = await guardarProducto({
+        id: producto?.id,
+        nombre: titulo.trim(),
+        titulo: titulo.trim(),
+        descripcion: descripcion.trim() || null,
+        precio_usd: precioNum,
+        precio_base: precioNum.toFixed(2),
+        stock: sanitizarNumero(stock, 0),
+        categoria_id: categoriaId || null,
+        imagen_url: trimmedImg || null,
+        imagenes: imagenesArray,
+        video_url: videoUrl.trim() || null,
+        en_oferta: enOferta,
+        precio_oferta: enOferta && precioOferta ? sanitizarNumero(precioOferta, 0) : null,
+        activo: activo,
+        tienda_id: tiendaId,
+      });
+
+      if (!res.success) {
+        // 3. Manejo de errores detallado: mostrar mensaje exacto de Supabase
+        const detalle = res.error || "Error no especificado por la base de datos";
+        console.error("Error al guardar producto:", detalle);
+        showToast(`Error al guardar: ${detalle}`, "error");
+        return;
+      }
+
+      showToast(
+        producto?.id ? "Producto actualizado exitosamente" : "Producto creado exitosamente",
+        "success"
+      );
       onSaved();
       onClose();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Error desconocido";
-      console.error("Error al guardar producto:", err);
+      const message = extraerMensajeError(err);
+      console.error("Excepción inesperada en modal:", err);
       showToast(`Error al guardar: ${message}`, "error");
     } finally {
       setSaving(false);
     }
   }
 
-  const precioVes = convertirUsdaVes(precioBase || 0, tasaBcv);
+  const precioNumCalculo = sanitizarNumero(precioBase, 0);
+  const precioVes = convertirUsdaVes(precioNumCalculo, tasaBcv);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
@@ -192,8 +188,8 @@ export function ProductModal({
         </div>
 
         {/* Formulario */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
-          {/* Título */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+          {/* Nombre / Título */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
               Nombre del Producto *
@@ -260,7 +256,7 @@ export function ProductModal({
             />
           </div>
 
-          {/* Precios y Stock */}
+          {/* Precios y Stock (Soporta comas y puntos) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-xl bg-slate-950/60 border border-slate-800">
             <div>
               <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
@@ -269,9 +265,8 @@ export function ProductModal({
               <div className="relative">
                 <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">$</span>
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
                   required
                   value={precioBase}
                   onChange={(e) => setPrecioBase(e.target.value)}
@@ -295,8 +290,8 @@ export function ProductModal({
                 Stock Disponible *
               </label>
               <input
-                type="number"
-                min="0"
+                type="text"
+                inputMode="numeric"
                 required
                 value={stock}
                 onChange={(e) => setStock(e.target.value)}
@@ -329,9 +324,8 @@ export function ProductModal({
                 <div className="relative">
                   <span className="absolute left-3 top-2 text-slate-400 font-bold text-sm">$</span>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    type="text"
+                    inputMode="decimal"
                     value={precioOferta}
                     onChange={(e) => setPrecioOferta(e.target.value)}
                     placeholder="Ej. 19.99"

@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { ShoppingCart, Video, Check, Package, Flame, AlertCircle } from "lucide-react";
 import { ProductoRow } from "@/types/database.types";
-import { convertirUsdaVes, formatoUSD, formatoVES } from "@/utils/currency";
+import { convertirUsdaVes, formatoUSD, formatoVES, sanitizarNumero } from "@/utils/currency";
 import { useCart } from "@/context/CartContext";
 
 interface ProductCardProps {
@@ -16,13 +16,18 @@ export function ProductCard({ producto, tasaBcv, onOpenVideo }: ProductCardProps
   const { agregarProducto } = useCart();
   const [agregadoAnim, setAgregadoAnim] = useState(false);
 
+  const tituloMostrar = producto.titulo || producto.nombre || "Producto por encargo";
+  const imagenMostrar = producto.imagen_url || (producto.imagenes && producto.imagenes[0]) || "";
+  const precioBaseNum = sanitizarNumero(producto.precio_base ?? producto.precio_usd, 0);
+  const precioOfertaNum = producto.precio_oferta ? sanitizarNumero(producto.precio_oferta, 0) : null;
+
   const precioFinalUsd =
-    producto.en_oferta && producto.precio_oferta
-      ? producto.precio_oferta
-      : producto.precio_base;
+    producto.en_oferta && precioOfertaNum !== null
+      ? precioOfertaNum
+      : precioBaseNum;
 
   const precioVes = convertirUsdaVes(precioFinalUsd, tasaBcv);
-  const stockNum = parseFloat(producto.stock || "0");
+  const stockNum = parseFloat(producto.stock ? producto.stock.toString() : "0");
   const pocoStock = stockNum > 0 && stockNum <= 3;
   const sinStock = stockNum <= 0;
 
@@ -37,11 +42,11 @@ export function ProductCard({ producto, tasaBcv, onOpenVideo }: ProductCardProps
     <div className="group relative flex flex-col justify-between rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-cyan-500/50 transition-all duration-300 overflow-hidden shadow-lg hover:shadow-cyan-500/10 backdrop-blur">
       {/* Contenedor de Imagen y Badges */}
       <div className="relative aspect-square w-full bg-slate-950 overflow-hidden flex items-center justify-center">
-        {producto.imagen_url ? (
+        {imagenMostrar ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={producto.imagen_url}
-            alt={producto.titulo}
+            src={imagenMostrar}
+            alt={tituloMostrar}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             onError={(e) => {
               (e.target as HTMLImageElement).src =
@@ -78,7 +83,7 @@ export function ProductCard({ producto, tasaBcv, onOpenVideo }: ProductCardProps
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onOpenVideo(producto.video_url!, producto.titulo);
+              onOpenVideo(producto.video_url!, tituloMostrar);
             }}
             className="absolute bottom-3 right-3 p-2 rounded-xl bg-slate-950/80 hover:bg-cyan-500 text-white border border-slate-700 hover:border-cyan-400 transition-all shadow-lg flex items-center gap-1.5 text-xs font-medium backdrop-blur-md"
             title="Ver video demostrativo"
@@ -94,7 +99,7 @@ export function ProductCard({ producto, tasaBcv, onOpenVideo }: ProductCardProps
         <div>
           <div className="flex items-start justify-between gap-2 mb-1">
             <h3 className="font-bold text-white text-base leading-snug line-clamp-1 group-hover:text-cyan-400 transition-colors">
-              {producto.titulo}
+              {tituloMostrar}
             </h3>
           </div>
 
@@ -118,7 +123,7 @@ export function ProductCard({ producto, tasaBcv, onOpenVideo }: ProductCardProps
                 )}
               </div>
               <span className="text-[11px] text-slate-400 block font-mono">
-                50% abono: {formatoUSD(parseFloat(precioFinalUsd) / 2)}
+                50% abono: {formatoUSD(precioFinalUsd / 2)}
               </span>
             </div>
 

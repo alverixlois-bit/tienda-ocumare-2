@@ -43,3 +43,18 @@ export function formatoVES(monto: string | number): string {
     return "Bs. 0,00";
   }
 }
+
+/**
+ * Sanitiza cualquier valor numérico (reemplaza coma por punto y parsea con parseFloat).
+ */
+export function sanitizarNumero(
+  valor: string | number | null | undefined,
+  defaultValue: number = 0
+): number {
+  if (valor === null || valor === undefined || valor === "") {
+    return defaultValue;
+  }
+  const str = valor.toString().trim().replace(/,/g, ".");
+  const num = parseFloat(str);
+  return isNaN(num) ? defaultValue : num;
+}
