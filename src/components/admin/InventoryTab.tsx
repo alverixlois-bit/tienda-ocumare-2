@@ -19,6 +19,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ProductModal } from "./ProductModal";
 import { convertirUsdaVes, formatoUSD, formatoVES, sanitizarNumero } from "@/utils/currency";
 import { obtenerCategorias } from "@/actions/categories";
+import { eliminarProducto as eliminarProductoAction } from "@/actions/products";
 
 interface InventoryTabProps {
   tasaBcv: number;
@@ -114,8 +115,8 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
     if (!confirm(`¿Estás seguro de eliminar "${titulo}" del inventario?`)) return;
 
     try {
-      const { error } = await supabase.from("productos").delete().eq("id", id);
-      if (error) throw error;
+      const res = await eliminarProductoAction(id, titulo);
+      if (!res.success) throw new Error(res.error || "Error al eliminar");
 
       setProductos((prev) => prev.filter((p) => p.id !== id));
       showToast(`Producto "${titulo}" eliminado exitosamente`, "success");

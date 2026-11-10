@@ -296,6 +296,7 @@ export type OrdenRow = {
   saldo_pendiente_ves: string;
   redondeo_ves_entero: boolean;
   comprobante_url: string | null;
+  referencia_pago?: string | null;
   notas: string | null;
   created_at: string;
   updated_at: string;
@@ -327,6 +328,7 @@ export type OrdenInsert = {
   saldo_pendiente_ves?: string;
   redondeo_ves_entero?: boolean;
   comprobante_url?: string | null;
+  referencia_pago?: string | null;
   notas?: string | null;
   created_at?: string;
   updated_at?: string;
@@ -356,6 +358,7 @@ export type OrdenUpdate = {
   saldo_pendiente_ves?: string;
   redondeo_ves_entero?: boolean;
   comprobante_url?: string | null;
+  referencia_pago?: string | null;
   notas?: string | null;
   created_at?: string;
   updated_at?: string;
@@ -525,6 +528,17 @@ export type ConfiguracionTiendaRow = {
   whatsapp_2_nombre?: string | null;
   whatsapp_3?: string | null;
   whatsapp_3_nombre?: string | null;
+  // Métodos de Pago
+  pago_movil_banco?: string | null;
+  pago_movil_telefono?: string | null;
+  pago_movil_cedula?: string | null;
+  transferencia_banco?: string | null;
+  transferencia_cuenta?: string | null;
+  transferencia_beneficiario?: string | null;
+  transferencia_rif?: string | null;
+  binance_pay_email?: string | null;
+  binance_pay_id?: string | null;
+  otros_metodos_pago?: string | null;
 };
 
 export type ConfiguracionTiendaInsert = {
@@ -540,6 +554,17 @@ export type ConfiguracionTiendaInsert = {
   whatsapp_2_nombre?: string | null;
   whatsapp_3?: string | null;
   whatsapp_3_nombre?: string | null;
+  // Métodos de Pago
+  pago_movil_banco?: string | null;
+  pago_movil_telefono?: string | null;
+  pago_movil_cedula?: string | null;
+  transferencia_banco?: string | null;
+  transferencia_cuenta?: string | null;
+  transferencia_beneficiario?: string | null;
+  transferencia_rif?: string | null;
+  binance_pay_email?: string | null;
+  binance_pay_id?: string | null;
+  otros_metodos_pago?: string | null;
 };
 
 export type ConfiguracionTiendaUpdate = {
@@ -555,6 +580,17 @@ export type ConfiguracionTiendaUpdate = {
   whatsapp_2_nombre?: string | null;
   whatsapp_3?: string | null;
   whatsapp_3_nombre?: string | null;
+  // Métodos de Pago
+  pago_movil_banco?: string | null;
+  pago_movil_telefono?: string | null;
+  pago_movil_cedula?: string | null;
+  transferencia_banco?: string | null;
+  transferencia_cuenta?: string | null;
+  transferencia_beneficiario?: string | null;
+  transferencia_rif?: string | null;
+  binance_pay_email?: string | null;
+  binance_pay_id?: string | null;
+  otros_metodos_pago?: string | null;
 };
 
 export type ProductoDbRow = {
@@ -618,6 +654,8 @@ export type PedidoDbRow = {
   cliente_telefono: string;
   agencia_envio: string;
   estado_pago: EstadoOrden | string;
+  referencia_pago?: string | null;
+  comprobante_url?: string | null;
   created_at?: string;
 };
 
@@ -628,6 +666,8 @@ export type PedidoDbInsert = {
   cliente_telefono: string;
   agencia_envio: string;
   estado_pago: EstadoOrden | string;
+  referencia_pago?: string | null;
+  comprobante_url?: string | null;
   created_at?: string;
 };
 
@@ -638,26 +678,37 @@ export type PedidoDbUpdate = {
   cliente_telefono?: string;
   agencia_envio?: string;
   estado_pago?: EstadoOrden | string;
+  referencia_pago?: string | null;
+  comprobante_url?: string | null;
   created_at?: string;
 };
 
 export type AuditoriaLogDbRow = {
   id: string | number;
+  email?: string | null;
   accion: string;
+  tabla?: string | null;
+  registro_id?: string | null;
   detalles: Json | string;
   created_at?: string;
 };
 
 export type AuditoriaLogDbInsert = {
   id?: string | number;
+  email?: string | null;
   accion: string;
+  tabla?: string | null;
+  registro_id?: string | null;
   detalles: Json | string;
   created_at?: string;
 };
 
 export type AuditoriaLogDbUpdate = {
   id?: string | number;
+  email?: string | null;
   accion?: string;
+  tabla?: string | null;
+  registro_id?: string | null;
   detalles?: Json | string;
   created_at?: string;
 };

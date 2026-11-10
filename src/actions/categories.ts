@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { CategoriaRow, CategoriaUpdate } from "@/types/database.types";
+import { registrarAccionAuditoria } from "@/lib/audit";
 
 export type CategoriaResponse = {
   success: boolean;
@@ -127,6 +128,14 @@ export async function crearCategoria(formData: FormData): Promise<CategoriaActio
       return { success: false, error: error.message };
     }
 
+    // Registrar en auditoría
+    await registrarAccionAuditoria({
+      accion: "categoria_creada",
+      tabla: "categorias",
+      registroId: (data as any)?.id,
+      detalles: { nombre, slug, orden, descripcion },
+    });
+
     revalidatePath("/admin");
     revalidatePath("/catalogo");
     revalidatePath("/");
@@ -186,6 +195,14 @@ export async function actualizarCategoria(
       return { success: false, error: error.message };
     }
 
+    // Registrar en auditoría
+    await registrarAccionAuditoria({
+      accion: "categoria_actualizada",
+      tabla: "categorias",
+      registroId: id,
+      detalles: { nombre, slug, orden, descripcion, activo },
+    });
+
     revalidatePath("/admin");
     revalidatePath("/catalogo");
     revalidatePath("/");
@@ -220,6 +237,14 @@ export async function toggleEstadoCategoria(
       return { success: false, error: error.message };
     }
 
+    // Registrar en auditoría
+    await registrarAccionAuditoria({
+      accion: activo ? "categoria_activada" : "categoria_desactivada",
+      tabla: "categorias",
+      registroId: id,
+      detalles: { activo },
+    });
+
     revalidatePath("/admin");
     revalidatePath("/catalogo");
     revalidatePath("/");
@@ -242,6 +267,14 @@ export async function eliminarCategoria(id: string): Promise<{ success: boolean;
     if (error) {
       return { success: false, error: error.message };
     }
+
+    // Registrar en auditoría
+    await registrarAccionAuditoria({
+      accion: "categoria_eliminada",
+      tabla: "categorias",
+      registroId: id,
+      detalles: { id },
+    });
 
     revalidatePath("/admin");
     revalidatePath("/catalogo");

@@ -22,6 +22,7 @@ import { PaymentDetailsBox } from "@/components/pedido/PaymentDetailsBox";
 import { WhatsAppReporterBox } from "@/components/pedido/WhatsAppReporterBox";
 import { OrderP2PChat } from "@/components/pedido/OrderP2PChat";
 import { formatoUSD, formatoVES } from "@/utils/currency";
+import { obtenerConfiguracionTienda, ConfiguracionTiendaData } from "@/actions/config";
 
 export default function PedidoPage() {
   const params = useParams();
@@ -29,6 +30,7 @@ export default function PedidoPage() {
 
   const [orden, setOrden] = useState<OrdenRow | null>(null);
   const [items, setItems] = useState<OrdenItemRow[]>([]);
+  const [configTienda, setConfigTienda] = useState<ConfiguracionTiendaData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const supabase = createClient();
@@ -121,6 +123,16 @@ export default function PedidoPage() {
       if (itemsData) {
         setItems(itemsData);
       }
+
+      // 3. Cargar configuración y datos bancarios de la tienda
+      try {
+        const conf = await obtenerConfiguracionTienda();
+        if (conf) {
+          setConfigTienda(conf);
+        }
+      } catch (errConfig) {
+        console.warn("Aviso cargando configuración de tienda:", errConfig);
+      }
     } catch (err) {
       console.error("Error al cargar orden:", err);
     } finally {
@@ -205,6 +217,7 @@ export default function PedidoPage() {
             montoAbonoUsd={esAbono ? orden.monto_inicial_usd : orden.total_usd}
             montoAbonoVes={esAbono ? orden.monto_inicial_ves : orden.total_ves}
             tasaBcv={orden.tasa_cambio_bcv}
+            configTienda={configTienda}
           />
         )}
 

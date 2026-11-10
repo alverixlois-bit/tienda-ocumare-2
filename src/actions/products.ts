@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sanitizarNumero } from "@/utils/currency";
+import { registrarAccionAuditoria } from "@/lib/audit";
 
 export interface GuardarProductoPayload {
   id?: string;
@@ -255,6 +256,18 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
         };
       }
 
+      await registrarAccionAuditoria({
+        accion: "producto_actualizado",
+        tabla: "productos",
+        registroId: payload.id,
+        detalles: {
+          titulo: payload.titulo,
+          precio_base: payload.precio_base,
+          stock: payload.stock,
+          categoria_id: payload.categoria_id,
+        },
+      });
+
       revalidarRutas();
       return { success: true, data: resultadoData };
     }
@@ -307,12 +320,52 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
       };
     }
 
+    await registrarAccionAuditoria({
+      accion: "producto_creado",
+      tabla: "productos",
+      registroId: (resultadoData as any)?.id,
+      detalles: {
+        titulo: payload.titulo,
+        precio_base: payload.precio_base,
+        stock: payload.stock,
+        categoria_id: payload.categoria_id,
+      },
+    });
+
     revalidarRutas();
     return { success: true, data: resultadoData };
   } catch (err: unknown) {
     const errorMsg = extraerMensajeError(err);
     console.error("Excepción en guardarProducto:", err);
     return { success: false, error: errorMsg };
+  }
+}
+
+/**
+ * Elimina un producto por su ID y revalida las rutas.
+ */
+export async function eliminarProducto(
+  id: string,
+  titulo?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("productos").delete().eq("id", id);
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    await registrarAccionAuditoria({
+      accion: "producto_eliminado",
+      tabla: "productos",
+      registroId: id,
+      detalles: { id, titulo: titulo || "Producto" },
+    });
+
+    revalidarRutas();
+    return { success: true };
+  } catch (err: unknown) {
+    return { success: false, error: extraerMensajeError(err) };
   }
 }
 

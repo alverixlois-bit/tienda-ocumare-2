@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { registrarAccionAuditoria } from "@/lib/audit";
 
 export interface TasaBCVResponse {
   success: boolean;
@@ -22,10 +23,21 @@ export interface ConfiguracionTiendaData {
   whatsapp_2_nombre?: string | null;
   whatsapp_3?: string | null;
   whatsapp_3_nombre?: string | null;
+  // Métodos de Pago y Datos Bancarios
+  pago_movil_banco?: string | null;
+  pago_movil_telefono?: string | null;
+  pago_movil_cedula?: string | null;
+  transferencia_banco?: string | null;
+  transferencia_cuenta?: string | null;
+  transferencia_beneficiario?: string | null;
+  transferencia_rif?: string | null;
+  binance_pay_email?: string | null;
+  binance_pay_id?: string | null;
+  otros_metodos_pago?: string | null;
 }
 
 /**
- * Consulta la configuración completa de la tienda (tasa, redes y contactos WhatsApp).
+ * Consulta la configuración completa de la tienda (tasa, redes, WhatsApp y métodos de pago).
  */
 export async function obtenerConfiguracionTienda(): Promise<ConfiguracionTiendaData> {
   const fallback: ConfiguracionTiendaData = {
@@ -40,6 +52,17 @@ export async function obtenerConfiguracionTienda(): Promise<ConfiguracionTiendaD
     whatsapp_2_nombre: "Atención al Cliente",
     whatsapp_3: "+584160000003",
     whatsapp_3_nombre: "Despachos y Pagos",
+    // Valores por defecto de métodos de pago
+    pago_movil_banco: "0102 - Banco de Venezuela",
+    pago_movil_telefono: "04121234567",
+    pago_movil_cedula: "V-12345678",
+    transferencia_banco: "Banesco Banco Universal",
+    transferencia_cuenta: "0134-0000-00-0000000000",
+    transferencia_beneficiario: "OcumareHub C.A.",
+    transferencia_rif: "J-12345678-0",
+    binance_pay_email: "",
+    binance_pay_id: "",
+    otros_metodos_pago: "",
   };
 
   try {
@@ -67,6 +90,17 @@ export async function obtenerConfiguracionTienda(): Promise<ConfiguracionTiendaD
         whatsapp_2_nombre: data.whatsapp_2_nombre || fallback.whatsapp_2_nombre,
         whatsapp_3: data.whatsapp_3 || fallback.whatsapp_3,
         whatsapp_3_nombre: data.whatsapp_3_nombre || fallback.whatsapp_3_nombre,
+        // Métodos de pago
+        pago_movil_banco: data.pago_movil_banco ?? fallback.pago_movil_banco,
+        pago_movil_telefono: data.pago_movil_telefono ?? fallback.pago_movil_telefono,
+        pago_movil_cedula: data.pago_movil_cedula ?? fallback.pago_movil_cedula,
+        transferencia_banco: data.transferencia_banco ?? fallback.transferencia_banco,
+        transferencia_cuenta: data.transferencia_cuenta ?? fallback.transferencia_cuenta,
+        transferencia_beneficiario: data.transferencia_beneficiario ?? fallback.transferencia_beneficiario,
+        transferencia_rif: data.transferencia_rif ?? fallback.transferencia_rif,
+        binance_pay_email: data.binance_pay_email ?? fallback.binance_pay_email,
+        binance_pay_id: data.binance_pay_id ?? fallback.binance_pay_id,
+        otros_metodos_pago: data.otros_metodos_pago ?? fallback.otros_metodos_pago,
       };
     }
 
@@ -78,79 +112,150 @@ export async function obtenerConfiguracionTienda(): Promise<ConfiguracionTiendaD
 }
 
 /**
+ * Función interna resiliente para actualizar campos en configuracion_tienda.
+ * Si una columna aún no ha sido migrada en Supabase, la omite y persiste el resto sin fallar.
+ */
+async function guardarEnConfiguracionTienda(
+  payload: Record<string, any>
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const currentPayload: Record<string, any> = { ...payload, updated_at: new Date().toISOString() };
+
+    for (let intento = 0; intento < 10; intento++) {
+      const { data: rowCheck } = await supabase
+        .from("configuracion_tienda")
+        .select("id")
+        .eq("id", 1)
+        .maybeSingle();
+
+      let dbError = null;
+      if (rowCheck) {
+        const { error } = await supabase
+          .from("configuracion_tienda")
+          .update(currentPayload as any)
+          .eq("id", 1);
+        dbError = error;
+      } else {
+        const { error } = await supabase
+          .from("configuracion_tienda")
+          .upsert({
+            id: 1,
+            tasa_bcv: 52.5,
+            ...currentPayload,
+          } as any);
+        dbError = error;
+      }
+
+      if (!dbError) {
+        revalidatePath("/admin");
+        revalidatePath("/catalogo");
+        revalidatePath("/pedido");
+        revalidatePath("/");
+        return { success: true };
+      }
+
+      // Si falla por columna inexistente en BD
+      const msg = dbError.message || "";
+      const match =
+        msg.match(/column\s+["']?([a-zA-Z0-9_]+)["']?.*does not exist/i) ||
+        msg.match(/Could not find the ['"]([a-zA-Z0-9_]+)['"] column/i);
+      const colFaltante = match ? match[1] : null;
+
+      if (colFaltante && colFaltante in currentPayload) {
+        console.warn(`Omitiendo columna no creada en BD '${colFaltante}' y reintentando...`);
+        delete currentPayload[colFaltante];
+        continue;
+      }
+
+      return { success: false, error: dbError.message };
+    }
+
+    return { success: false, error: "No se pudo actualizar la configuración tras varios intentos." };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Error al guardar configuración";
+    return { success: false, error: msg };
+  }
+}
+
+/**
  * Actualiza los enlaces de redes sociales y los 3 contactos de WhatsApp de los vendedores.
  */
 export async function actualizarRedesYContactos(
   formData: FormData
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const instagram_url = formData.get("instagram_url")?.toString().trim() || null;
-    const tiktok_url = formData.get("tiktok_url")?.toString().trim() || null;
-    const facebook_url = formData.get("facebook_url")?.toString().trim() || null;
+  const campos = [
+    "instagram_url",
+    "tiktok_url",
+    "facebook_url",
+    "whatsapp_1",
+    "whatsapp_1_nombre",
+    "whatsapp_2",
+    "whatsapp_2_nombre",
+    "whatsapp_3",
+    "whatsapp_3_nombre",
+  ];
 
-    const whatsapp_1 = formData.get("whatsapp_1")?.toString().trim() || null;
-    const whatsapp_1_nombre = formData.get("whatsapp_1_nombre")?.toString().trim() || null;
-
-    const whatsapp_2 = formData.get("whatsapp_2")?.toString().trim() || null;
-    const whatsapp_2_nombre = formData.get("whatsapp_2_nombre")?.toString().trim() || null;
-
-    const whatsapp_3 = formData.get("whatsapp_3")?.toString().trim() || null;
-    const whatsapp_3_nombre = formData.get("whatsapp_3_nombre")?.toString().trim() || null;
-
-    const supabase = await createClient();
-    const nowIso = new Date().toISOString();
-
-    const payload = {
-      instagram_url,
-      tiktok_url,
-      facebook_url,
-      whatsapp_1,
-      whatsapp_1_nombre,
-      whatsapp_2,
-      whatsapp_2_nombre,
-      whatsapp_3,
-      whatsapp_3_nombre,
-      updated_at: nowIso,
-    };
-
-    const { data: rowCheck } = await supabase
-      .from("configuracion_tienda")
-      .select("id")
-      .eq("id", 1)
-      .maybeSingle();
-
-    let dbError = null;
-    if (rowCheck) {
-      const { error } = await supabase
-        .from("configuracion_tienda")
-        .update(payload)
-        .eq("id", 1);
-      dbError = error;
-    } else {
-      const { error } = await supabase
-        .from("configuracion_tienda")
-        .upsert({
-          id: 1,
-          tasa_bcv: 52.5,
-          ...payload,
-        });
-      dbError = error;
+  const payload: Record<string, any> = {};
+  for (const c of campos) {
+    const val = formData.get(c);
+    if (val !== null) {
+      payload[c] = val.toString().trim() || null;
     }
-
-    if (dbError) {
-      return { success: false, error: dbError.message };
-    }
-
-    revalidatePath("/admin");
-    revalidatePath("/catalogo");
-    revalidatePath("/pedido");
-    revalidatePath("/");
-
-    return { success: true };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Error al guardar redes y contactos";
-    return { success: false, error: msg };
   }
+
+  const res = await guardarEnConfiguracionTienda(payload);
+  if (res.success) {
+    await registrarAccionAuditoria({
+      accion: "canales_contacto_actualizados",
+      tabla: "configuracion_tienda",
+      registroId: 1,
+      detalles: { campos: Object.keys(payload) },
+    });
+  }
+  return res;
+}
+
+/**
+ * Server Action para guardar Métodos de Pago, Datos Bancarios y Redes Sociales.
+ */
+export async function actualizarMetodosPago(
+  formData: FormData
+): Promise<{ success: boolean; error?: string }> {
+  const campos = [
+    "pago_movil_banco",
+    "pago_movil_telefono",
+    "pago_movil_cedula",
+    "transferencia_banco",
+    "transferencia_cuenta",
+    "transferencia_beneficiario",
+    "transferencia_rif",
+    "binance_pay_email",
+    "binance_pay_id",
+    "otros_metodos_pago",
+    "facebook_url",
+    "instagram_url",
+    "tiktok_url",
+  ];
+
+  const payload: Record<string, any> = {};
+  for (const c of campos) {
+    const val = formData.get(c);
+    if (val !== null) {
+      payload[c] = val.toString().trim() || null;
+    }
+  }
+
+  const res = await guardarEnConfiguracionTienda(payload);
+  if (res.success) {
+    await registrarAccionAuditoria({
+      accion: "metodos_pago_actualizados",
+      tabla: "configuracion_tienda",
+      registroId: 1,
+      detalles: { campos: Object.keys(payload) },
+    });
+  }
+  return res;
 }
 
 /**
@@ -282,6 +387,14 @@ export async function actualizarTasaBCV(
         error: `Error de persistencia en Supabase: ${dbError.message}`,
       };
     }
+
+    // Registrar en auditoría
+    await registrarAccionAuditoria({
+      accion: "tasa_bcv_actualizada",
+      tabla: "configuracion_tienda",
+      registroId: 1,
+      detalles: { tasa_bcv: tasaFinal },
+    });
 
     // 3. Revalidación instantánea de rutas de Next.js App Router
     revalidatePath("/");

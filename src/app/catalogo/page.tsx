@@ -52,18 +52,44 @@ export default function CatalogoPage() {
         setCategorias(catData);
       }
 
-      // 3. Cargar Productos Activos
-      const { data: prodData, error } = await supabase
+      // 3. Cargar Todos los Productos Activos sin filtros restrictivos
+      let query = supabase
         .from("productos")
         .select("*")
-        .eq("tienda_id", defaultTiendaId)
-        .eq("activo", true)
+        .or("activo.eq.true,activo.is.null")
         .order("created_at", { ascending: false });
 
+      let { data: prodData, error } = await query;
+
+      if (error) {
+        // Reintentar consulta simple si 'activo' no admite la sintaxis .or
+        const fallbackQuery = await supabase
+          .from("productos")
+          .select("*")
+          .order("created_at", { ascending: false });
+        prodData = fallbackQuery.data;
+      }
+
       if (prodData && prodData.length > 0) {
-        setProductos(prodData);
+        // Normalizar mapeo de campos (nombre / titulo, imagen_url / imagenes)
+        const productosNormalizados = prodData.map((p) => {
+          const tituloFinal = p.titulo || p.nombre || "Producto por encargo";
+          const imagenFinal =
+            p.imagen_url ||
+            (Array.isArray(p.imagenes) && p.imagenes.length > 0 ? p.imagenes[0] : null) ||
+            p.imagen ||
+            null;
+
+          return {
+            ...p,
+            titulo: tituloFinal,
+            nombre: tituloFinal,
+            imagen_url: imagenFinal,
+            activo: p.activo ?? true,
+          };
+        });
+        setProductos(productosNormalizados as ProductoRow[]);
       } else {
-        // Fallback demo si aún no se han creado en DB
         setProductos([]);
       }
 

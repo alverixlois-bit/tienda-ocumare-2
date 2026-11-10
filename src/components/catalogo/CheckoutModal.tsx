@@ -1,12 +1,30 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { X, ShieldCheck, Truck, User, Phone, MapPin, CreditCard, RefreshCw } from "lucide-react";
+import {
+  X,
+  ShieldCheck,
+  Truck,
+  User,
+  Phone,
+  MapPin,
+  CreditCard,
+  RefreshCw,
+  Copy,
+  Check,
+  Smartphone,
+  Landmark,
+  Coins,
+  UploadCloud,
+  FileCheck2,
+  AlertCircle,
+} from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { createClient } from "@/lib/supabase/client";
 import { OrdenInsert, OrdenItemInsert, MetodoEntrega } from "@/types/database.types";
 import { formatoUSD, formatoVES } from "@/utils/currency";
+import { obtenerConfiguracionTienda, ConfiguracionTiendaData } from "@/actions/config";
 
 export function CheckoutModal() {
   const router = useRouter();
@@ -33,7 +51,77 @@ export function CheckoutModal() {
   const [notas, setNotas] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
+  // Datos bancarios de configuracion_tienda
+  const [configTienda, setConfigTienda] = useState<ConfiguracionTiendaData | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // Referencia y Comprobante
+  const [referenciaPago, setReferenciaPago] = useState("");
+  const [comprobanteUrl, setComprobanteUrl] = useState("");
+  const [subiendoComprobante, setSubiendoComprobante] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+
   const supabase = createClient();
+
+  useEffect(() => {
+    if (isCheckoutOpen) {
+      cargarConfigTienda();
+    }
+  }, [isCheckoutOpen]);
+
+  async function cargarConfigTienda() {
+    try {
+      const conf = await obtenerConfiguracionTienda();
+      if (conf) {
+        setConfigTienda(conf);
+      }
+    } catch (err) {
+      console.warn("Aviso al cargar datos bancarios:", err);
+    }
+  }
+
+  function copyToClipboard(text: string, fieldName: string) {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldName);
+    setTimeout(() => setCopiedField(null), 2000);
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setSubiendoComprobante(true);
+    setUploadError("");
+
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const cleanBase = (file.name || "comprobante")
+        .substring(0, file.name.lastIndexOf(".") || file.name.length)
+        .replace(/[^a-zA-Z0-9_-]/g, "_");
+      const filePath = `comprobantes/${Date.now()}_${cleanBase}.${ext}`;
+
+      const { data, error } = await supabase.storage
+        .from("productos")
+        .upload(filePath, file, { cacheControl: "3600", upsert: true });
+
+      if (error) {
+        console.error("Error al subir comprobante a Supabase Storage:", error);
+        setUploadError(`Error de subida: ${error.message}`);
+        return;
+      }
+
+      const { data: pubData } = supabase.storage.from("productos").getPublicUrl(filePath);
+      if (pubData && pubData.publicUrl) {
+        setComprobanteUrl(pubData.publicUrl);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Error al procesar archivo";
+      setUploadError(msg);
+    } finally {
+      setSubiendoComprobante(false);
+    }
+  }
 
   if (!isCheckoutOpen) return null;
 
@@ -65,7 +153,7 @@ export function CheckoutModal() {
         direccion_entrega: direccion.trim(),
         metodo_entrega: metodoEntrega,
         modalidad_pago: "abono",
-        estado: "pendiente",
+        estado: comprobanteUrl || referenciaPago ? "abono_verificado" : "pendiente",
         moneda_base: "USD",
         tasa_cambio_bcv: tasaBcv.toFixed(4),
         subtotal_usd: subtotalUSD.toFixed(4),
@@ -77,8 +165,9 @@ export function CheckoutModal() {
         saldo_pendiente_usd: saldoPendienteUSD.toFixed(4),
         saldo_pendiente_ves: saldoPendienteVES.toFixed(2),
         redondeo_ves_entero: false,
-        comprobante_url: null,
-        notas: `C.I/RIF: ${cedula.trim()} | Notas: ${notas.trim() || "Ninguna"}`,
+        comprobante_url: comprobanteUrl || null,
+        referencia_pago: referenciaPago.trim() || null,
+        notas: `C.I/RIF: ${cedula.trim()} | Ref: ${referenciaPago.trim() || "S/R"} | Notas: ${notas.trim() || "Ninguna"}`,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -109,7 +198,7 @@ export function CheckoutModal() {
           return {
             orden_id: ordenCreada.id,
             producto_id: item.producto.id,
-            producto_titulo: item.producto.titulo,
+            producto_titulo: item.producto.titulo || item.producto.nombre || "Producto",
             unidad_medida: item.producto.unidad_medida,
             moneda_base: "USD",
             precio_base: precioUsd,
@@ -136,7 +225,9 @@ export function CheckoutModal() {
               cliente_cedula: cedula.trim(),
               cliente_telefono: telefono.trim(),
               agencia_envio: `${metodoEntrega.toUpperCase()} - ${direccion.trim()}`,
-              estado_pago: "pendiente_abono",
+              estado_pago: comprobanteUrl || referenciaPago ? "abono_verificado" : "pendiente_abono",
+              referencia_pago: referenciaPago.trim() || null,
+              comprobante_url: comprobanteUrl || null,
             },
           ])
           .select()
@@ -146,14 +237,31 @@ export function CheckoutModal() {
       }
 
       // 3. Registrar en auditoria_logs si existe la tabla
-      await supabase.from("auditoria_logs").insert([
-        {
-          accion: "pedido_creado",
-          detalles: `Encargo #${numeroOrden} creado por ${nombre.trim()} (${cedula.trim()}). Total: ${formatoUSD(subtotalUSD)}. Abono 50%: ${formatoUSD(abonoUSD)}.`,
-        },
-      ]);
+      try {
+        await supabase.from("auditoria_logs").insert([
+          {
+            email: "cliente@ocumarehub.com",
+            accion: "pedido_creado",
+            tabla: "pedidos",
+            registro_id: pedidoFinalId,
+            detalles: {
+              numeroOrden,
+              cliente: nombre.trim(),
+              cedula: cedula.trim(),
+              totalUsd: subtotalUSD,
+              abonoUsd: abonoUSD,
+              referencia: referenciaPago.trim() || null,
+              comprobanteUrl: comprobanteUrl || null,
+            },
+          } as any,
+        ]);
+      } catch (errAudit) {
+        console.warn("Aviso auditoria checkout:", errAudit);
+      }
 
       // 4. Crear mensaje inicial en el chat privado del pedido
+      const msgRef = referenciaPago.trim() ? ` y referencia #${referenciaPago.trim()}` : "";
+      const msgCapture = comprobanteUrl ? " Comprobante de pago recibido." : "";
       await supabase.from("mensajes_chat").insert([
         {
           tienda_id: tiendaId,
@@ -162,7 +270,7 @@ export function CheckoutModal() {
           remitente: "sistema",
           cliente_id: null,
           remitente_rol: "sistema",
-          mensaje: `👋 ¡Hola ${nombre.trim()}! Tu orden #${numeroOrden} fue registrada exitosamente. Para procesar tu encargo, por favor realiza el abono del 50% (${formatoUSD(abonoUSD)} / ${formatoVES(abonoVES)}) y adjunta tu comprobante aquí.`,
+          mensaje: `👋 ¡Hola ${nombre.trim()}! Tu encargo #${numeroOrden} fue registrado exitosamente con abono del 50% (${formatoUSD(abonoUSD)} / ${formatoVES(abonoVES)})${msgRef}.${msgCapture} El vendedor verificará tu pago a la brevedad.`,
           leido: false,
           created_at: new Date().toISOString(),
         } as any,
@@ -180,6 +288,19 @@ export function CheckoutModal() {
       setLoading(false);
     }
   }
+
+  // Datos bancarios fallback
+  const pagoMovilBanco = configTienda?.pago_movil_banco || "0102 - Banco de Venezuela";
+  const pagoMovilTelefono = configTienda?.pago_movil_telefono || "04121234567";
+  const pagoMovilCedula = configTienda?.pago_movil_cedula || "V-12345678";
+
+  const transfBanco = configTienda?.transferencia_banco || "Banesco Banco Universal";
+  const transfCuenta = configTienda?.transferencia_cuenta || "0134-0000-00-0000000000";
+  const transfTitular = configTienda?.transferencia_beneficiario || "OcumareHub C.A.";
+  const transfRif = configTienda?.transferencia_rif || "J-12345678-0";
+
+  const binanceEmail = configTienda?.binance_pay_email?.trim();
+  const binanceId = configTienda?.binance_pay_id?.trim();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto animate-in fade-in">
@@ -216,7 +337,7 @@ export function CheckoutModal() {
                 {formatoUSD(abonoUSD)}
               </span>
               <span className="text-xs text-emerald-400 font-mono block">
-                {formatoVES(abonoVES)} (Tasa BCV: {tasaBcv.toFixed(2)})
+                = {formatoVES(abonoVES)} (Tasa BCV: {tasaBcv.toFixed(2)})
               </span>
             </div>
 
@@ -225,6 +346,160 @@ export function CheckoutModal() {
               <span className="font-mono text-white font-semibold">
                 {formatoUSD(saldoPendienteUSD)}
               </span>
+            </div>
+          </div>
+
+          {/* PASARELA DE PAGO: CUENTAS RECEPTORAS OFICIALES */}
+          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+            <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider block">
+              Cuentas Oficiales para el Abono del 50%
+            </span>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              {/* Opción 1: Pago Móvil */}
+              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5">
+                <div className="flex items-center gap-1.5 font-bold text-white text-[11px] text-cyan-300">
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Pago Móvil</span>
+                </div>
+                <p className="text-slate-400 text-[11px] truncate">
+                  <span className="text-slate-500">Banco:</span> {pagoMovilBanco}
+                </p>
+                <div className="flex items-center justify-between font-mono text-[11px]">
+                  <span className="text-white font-semibold">{pagoMovilTelefono}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(pagoMovilTelefono, "pago_movil_telf")}
+                    className="p-1 hover:text-white text-slate-400"
+                    title="Copiar teléfono"
+                  >
+                    {copiedField === "pago_movil_telf" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between font-mono text-[11px]">
+                  <span className="text-slate-300">{pagoMovilCedula}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(pagoMovilCedula, "pago_movil_ced")}
+                    className="p-1 hover:text-white text-slate-400"
+                    title="Copiar Cédula"
+                  >
+                    {copiedField === "pago_movil_ced" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Opción 2: Transferencia Bancaria */}
+              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5">
+                <div className="flex items-center gap-1.5 font-bold text-white text-[11px] text-teal-300">
+                  <Landmark className="w-3.5 h-3.5" />
+                  <span>Transferencia Bancaria</span>
+                </div>
+                <p className="text-slate-400 text-[11px] truncate">
+                  <span className="text-slate-500">Banco:</span> {transfBanco}
+                </p>
+                <div className="flex items-center justify-between font-mono text-[11px]">
+                  <span className="text-teal-300 font-semibold truncate max-w-[130px]">{transfCuenta}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(transfCuenta, "transf_cta")}
+                    className="p-1 hover:text-white text-slate-400"
+                    title="Copiar cuenta"
+                  >
+                    {copiedField === "transf_cta" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between font-mono text-[11px]">
+                  <span className="text-slate-300 truncate max-w-[130px]">{transfRif}</span>
+                  <span className="text-[10px] text-slate-500 truncate max-w-[80px]">{transfTitular}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Binance Pay si está disponible */}
+            {(binanceEmail || binanceId) && (
+              <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 flex items-center justify-between text-xs font-mono">
+                <div className="flex items-center gap-1.5 text-amber-400 text-[11px]">
+                  <Coins className="w-3.5 h-3.5" />
+                  <span>Binance Pay: {binanceEmail || binanceId}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard((binanceEmail || binanceId)!, "binance_checkout")}
+                  className="p-1 hover:text-white text-slate-400"
+                  title="Copiar Binance"
+                >
+                  {copiedField === "binance_checkout" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* DATOS DEL COMPROBANTE Y REFERENCIA DE PAGO */}
+          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-3">
+            <span className="text-xs font-bold text-white uppercase tracking-wider block">
+              Reporte del Pago (Opcional o recomendado)
+            </span>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Referencia bancaria */}
+              <div>
+                <label className="block text-[11px] text-slate-400 font-medium mb-1">
+                  Número de Referencia Bancaria
+                </label>
+                <input
+                  type="text"
+                  value={referenciaPago}
+                  onChange={(e) => setReferenciaPago(e.target.value)}
+                  placeholder="Ej. 123456 o 4 últimos dígitos"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-mono focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              {/* Subida de Capture / Comprobante */}
+              <div>
+                <label className="block text-[11px] text-slate-400 font-medium mb-1">
+                  Foto o Capture del Pago
+                </label>
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    id="comprobante-upload"
+                  />
+                  <label
+                    htmlFor="comprobante-upload"
+                    className="flex items-center justify-center gap-2 px-3 py-2 bg-slate-900 border border-dashed border-slate-700 hover:border-cyan-500 rounded-xl text-xs text-slate-300 hover:text-white cursor-pointer transition-colors"
+                  >
+                    {subiendoComprobante ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                        <span>Subiendo...</span>
+                      </>
+                    ) : comprobanteUrl ? (
+                      <>
+                        <FileCheck2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400 font-semibold truncate max-w-[140px]">
+                          Capture adjunto
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Adjuntar Capture</span>
+                      </>
+                    )}
+                  </label>
+                </div>
+                {uploadError && (
+                  <p className="text-[10px] text-red-400 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    <span>{uploadError}</span>
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -351,14 +626,14 @@ export function CheckoutModal() {
             <button
               type="button"
               onClick={() => setIsCheckoutOpen(false)}
-              disabled={loading}
+              disabled={loading || subiendoComprobante}
               className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs font-semibold transition-colors"
             >
               Volver
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || subiendoComprobante}
               className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-bold text-xs sm:text-sm shadow-lg shadow-emerald-500/20 active:scale-95 transition-all disabled:opacity-50"
             >
               {loading ? (
