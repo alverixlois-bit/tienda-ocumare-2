@@ -259,6 +259,73 @@ export async function actualizarMetodosPago(
 }
 
 /**
+ * Server Action segura para guardar Ajustes Generales y Comerciales de la Tienda.
+ */
+export async function actualizarDatosTienda(params: {
+  tiendaId?: string;
+  nombre: string;
+  telefono: string;
+  modoOfertas: boolean;
+  permiteAbono: boolean;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const defaultTiendaId =
+      params.tiendaId || process.env.NEXT_PUBLIC_TIENDA_ID || "11111111-1111-4111-8111-111111111111";
+
+    const payload: Record<string, any> = {
+      nombre: params.nombre.trim(),
+      telefono: params.telefono.trim(),
+      modo_ofertas: params.modoOfertas,
+      permite_abono: params.permiteAbono,
+      updated_at: new Date().toISOString(),
+    };
+
+    // Intentar update en tiendas con reintentos
+    for (let intento = 0; intento < 5; intento++) {
+      const { error } = await supabase
+        .from("tiendas")
+        .update(payload as any)
+        .eq("id", defaultTiendaId);
+
+      if (!error) break;
+
+      const msg = (error.message || "").toLowerCase();
+      if (msg.includes("modo_ofertas") && "modo_ofertas" in payload) {
+        delete payload.modo_ofertas;
+        continue;
+      }
+      if (msg.includes("permite_abono") && "permite_abono" in payload) {
+        delete payload.permite_abono;
+        continue;
+      }
+      console.warn("Aviso al actualizar tiendas:", error.message);
+      break;
+    }
+
+    await registrarAccionAuditoria({
+      accion: "datos_tienda_actualizados",
+      tabla: "tiendas",
+      registroId: defaultTiendaId,
+      detalles: {
+        nombre: params.nombre,
+        telefono: params.telefono,
+        modoOfertas: params.modoOfertas,
+      },
+    });
+
+    revalidatePath("/admin");
+    revalidatePath("/catalogo");
+    revalidatePath("/");
+
+    return { success: true };
+  } catch (err: unknown) {
+    console.error("Error en actualizarDatosTienda:", err);
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
  * Consulta la tasa oficial BCV actual y la fecha de última actualización desde Supabase.
  */
 export async function obtenerTasaBCV(): Promise<{

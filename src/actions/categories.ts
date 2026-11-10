@@ -47,30 +47,62 @@ function generarSlug(nombre: string): string {
 
 /**
  * Obtiene todas las categorías activas o totales para el catálogo y panel de control.
- * Siempre retorna un array (vacío si no hay datos o falla la consulta).
+ * Soporta de forma flexible 'orden' o 'posicion' sin fallar por diferencias de esquema.
  */
 export async function obtenerCategorias(soloActivas: boolean = false): Promise<CategoriaRow[]> {
   try {
     const supabase = await createClient();
 
-    let query = supabase
-      .from("categorias")
-      .select("*")
-      .order("orden", { ascending: true })
-      .order("nombre", { ascending: true });
-
+    let query = supabase.from("categorias").select("*");
     if (soloActivas) {
       query = query.eq("activo", true);
     }
 
-    const { data, error } = await query;
+    // 1. Probar ordenando por 'orden'
+    let { data, error } = await query
+      .order("orden", { ascending: true })
+      .order("nombre", { ascending: true });
 
-    if (error) {
-      console.warn("Aviso al consultar categorias de Supabase:", error.message);
-      return [];
+    // 2. Si falla por la columna 'orden', probar con 'posicion'
+    if (error && ((error.message || "").toLowerCase().includes("orden") || error.code === "42703")) {
+      const retryPos = await query
+        .order("posicion", { ascending: true })
+        .order("nombre", { ascending: true });
+      if (!retryPos.error) {
+        data = retryPos.data;
+        error = null;
+      }
     }
 
-    return Array.isArray(data) ? (data as CategoriaRow[]) : [];
+    // 3. Si aún persiste error, consultar sin order() y ordenar en memoria
+    if (error) {
+      const retrySimple = await query;
+      data = retrySimple.data;
+    }
+
+    if (!Array.isArray(data)) return [];
+
+    // Normalizar 'orden' y 'posicion' para los componentes
+    const normalizadas = data.map((c: any) => {
+      const posVal =
+        c.orden !== undefined && c.orden !== null
+          ? c.orden
+          : c.posicion !== undefined && c.posicion !== null
+          ? c.posicion
+          : 0;
+
+      return {
+        ...c,
+        orden: Number(posVal) || 0,
+        posicion: Number(posVal) || 0,
+      };
+    });
+
+    normalizadas.sort(
+      (a, b) => a.orden - b.orden || (a.nombre || "").localeCompare(b.nombre || "")
+    );
+
+    return normalizadas as CategoriaRow[];
   } catch (err) {
     console.warn("Excepción al consultar categorias:", err);
     return [];
@@ -78,50 +110,68 @@ export async function obtenerCategorias(soloActivas: boolean = false): Promise<C
 }
 
 /**
- * Agrega una nueva categoría al sistema y revalida las rutas.
+ * Agrega una nueva categoría al sistema de forma resiliente a 'orden' / 'posicion' y revalida las rutas.
  */
 export async function crearCategoria(formData: FormData): Promise<CategoriaActionResponse> {
   try {
     const nombre = formData.get("nombre")?.toString().trim();
     const descripcion = formData.get("descripcion")?.toString().trim() || null;
     const ordenStr = formData.get("orden")?.toString();
-    const orden = ordenStr ? parseInt(ordenStr, 10) : 0;
+    const ordenNum = ordenStr ? parseInt(ordenStr, 10) : 0;
+    const finalOrden = isNaN(ordenNum) ? 0 : ordenNum;
 
     if (!nombre) {
       return { success: false, error: "El nombre de la categoría es obligatorio." };
     }
 
     const slug = generarSlug(nombre);
-
     const supabase = await createClient();
     const tiendaId =
       process.env.NEXT_PUBLIC_TIENDA_ID || "11111111-1111-4111-8111-111111111111";
 
-    const payload: Record<string, any> = {
+    const currentPayload: Record<string, any> = {
       tienda_id: tiendaId,
       nombre,
       slug,
       descripcion,
       activo: true,
-      orden: isNaN(orden) ? 0 : orden,
+      orden: finalOrden,
+      posicion: finalOrden,
     };
 
-    let { data, error } = await supabase
-      .from("categorias")
-      .insert(payload as any)
-      .select()
-      .maybeSingle();
+    let data = null;
+    let error = null;
 
-    // Reintentar sin tienda_id si la columna no existe o falla la restricción
-    if (error && ((error.message || "").toLowerCase().includes("tienda_id") || error.code === "42703")) {
-      delete payload.tienda_id;
-      const retry = await supabase
+    // Bucle resiliente que omite columnas faltantes ('tienda_id', 'posicion', 'orden')
+    for (let intento = 0; intento < 5; intento++) {
+      const res = await supabase
         .from("categorias")
-        .insert(payload as any)
+        .insert(currentPayload as any)
         .select()
         .maybeSingle();
-      data = retry.data;
-      error = retry.error;
+
+      if (!res.error) {
+        data = res.data;
+        error = null;
+        break;
+      }
+
+      error = res.error;
+      const msg = (error.message || "").toLowerCase();
+
+      if (msg.includes("tienda_id") && "tienda_id" in currentPayload) {
+        delete currentPayload.tienda_id;
+        continue;
+      }
+      if (msg.includes("posicion") && "posicion" in currentPayload) {
+        delete currentPayload.posicion;
+        continue;
+      }
+      if (msg.includes("orden") && "orden" in currentPayload) {
+        delete currentPayload.orden;
+        continue;
+      }
+      break;
     }
 
     if (error) {
@@ -133,7 +183,7 @@ export async function crearCategoria(formData: FormData): Promise<CategoriaActio
       accion: "categoria_creada",
       tabla: "categorias",
       registroId: (data as any)?.id,
-      detalles: { nombre, slug, orden, descripcion },
+      detalles: { nombre, slug, orden: finalOrden, descripcion },
     });
 
     revalidatePath("/admin");
@@ -147,7 +197,7 @@ export async function crearCategoria(formData: FormData): Promise<CategoriaActio
 }
 
 /**
- * Actualiza los datos de una categoría existente.
+ * Actualiza los datos de una categoría existente con soporte para 'orden' / 'posicion'.
  */
 export async function actualizarCategoria(
   id: string,
@@ -166,10 +216,9 @@ export async function actualizarCategoria(
     }
 
     const slug = generarSlug(nombre);
-
     const supabase = await createClient();
 
-    const updates: CategoriaUpdate = {
+    const updates: Record<string, any> = {
       nombre,
       slug,
       descripcion,
@@ -178,18 +227,43 @@ export async function actualizarCategoria(
 
     if (orden !== undefined && !isNaN(orden)) {
       updates.orden = orden;
+      updates.posicion = orden;
     }
 
     if (activo !== undefined) {
       updates.activo = activo;
     }
 
-    const { data, error } = await supabase
-      .from("categorias")
-      .update(updates)
-      .eq("id", id)
-      .select()
-      .maybeSingle();
+    let data = null;
+    let error = null;
+
+    for (let intento = 0; intento < 5; intento++) {
+      const res = await supabase
+        .from("categorias")
+        .update(updates as any)
+        .eq("id", id)
+        .select()
+        .maybeSingle();
+
+      if (!res.error) {
+        data = res.data;
+        error = null;
+        break;
+      }
+
+      error = res.error;
+      const msg = (error.message || "").toLowerCase();
+
+      if (msg.includes("posicion") && "posicion" in updates) {
+        delete updates.posicion;
+        continue;
+      }
+      if (msg.includes("orden") && "orden" in updates) {
+        delete updates.orden;
+        continue;
+      }
+      break;
+    }
 
     if (error) {
       return { success: false, error: error.message };

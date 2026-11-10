@@ -26,6 +26,7 @@ import {
   obtenerConfiguracionTienda,
   actualizarRedesYContactos,
   actualizarMetodosPago,
+  actualizarDatosTienda,
   ConfiguracionTiendaData,
 } from "@/actions/config";
 
@@ -175,30 +176,35 @@ export function StoreSettingsTab({ onTasaUpdated, showToast }: StoreSettingsProp
     e.preventDefault();
 
     startTransitionPagos(async () => {
-      const formData = new FormData();
-      formData.append("pago_movil_banco", pagoMovilBanco);
-      formData.append("pago_movil_telefono", pagoMovilTelefono);
-      formData.append("pago_movil_cedula", pagoMovilCedula);
+      try {
+        const formData = new FormData();
+        formData.append("pago_movil_banco", pagoMovilBanco);
+        formData.append("pago_movil_telefono", pagoMovilTelefono);
+        formData.append("pago_movil_cedula", pagoMovilCedula);
 
-      formData.append("transferencia_banco", transferenciaBanco);
-      formData.append("transferencia_cuenta", transferenciaCuenta);
-      formData.append("transferencia_beneficiario", transferenciaBeneficiario);
-      formData.append("transferencia_rif", transferenciaRif);
+        formData.append("transferencia_banco", transferenciaBanco);
+        formData.append("transferencia_cuenta", transferenciaCuenta);
+        formData.append("transferencia_beneficiario", transferenciaBeneficiario);
+        formData.append("transferencia_rif", transferenciaRif);
 
-      formData.append("binance_pay_email", binancePayEmail);
-      formData.append("binance_pay_id", binancePayId);
+        formData.append("binance_pay_email", binancePayEmail);
+        formData.append("binance_pay_id", binancePayId);
 
-      formData.append("otros_metodos_pago", otrosMetodosPago);
+        formData.append("otros_metodos_pago", otrosMetodosPago);
 
-      formData.append("facebook_url", facebookUrl);
-      formData.append("instagram_url", instagramUrl);
-      formData.append("tiktok_url", tiktokUrl);
+        formData.append("facebook_url", facebookUrl);
+        formData.append("instagram_url", instagramUrl);
+        formData.append("tiktok_url", tiktokUrl);
 
-      const res = await actualizarMetodosPago(formData);
-      if (res.success) {
-        showToast("Métodos de pago y cuentas bancarias actualizadas con éxito", "success");
-      } else {
-        showToast(res.error || "Error al guardar métodos de pago", "error");
+        const res = await actualizarMetodosPago(formData);
+        if (res.success) {
+          showToast("Métodos de pago y cuentas bancarias actualizadas con éxito", "success");
+        } else {
+          showToast(res.error || "Error al guardar métodos de pago", "error");
+        }
+      } catch (err: unknown) {
+        console.error("Excepción en handleGuardarMetodosPago:", err);
+        showToast("Error inesperado al guardar datos bancarios", "error");
       }
     });
   }
@@ -208,51 +214,59 @@ export function StoreSettingsTab({ onTasaUpdated, showToast }: StoreSettingsProp
     e.preventDefault();
 
     startTransitionContactos(async () => {
-      const formData = new FormData();
-      formData.append("instagram_url", instagramUrl);
-      formData.append("tiktok_url", tiktokUrl);
-      formData.append("facebook_url", facebookUrl);
+      try {
+        const formData = new FormData();
+        formData.append("instagram_url", instagramUrl);
+        formData.append("tiktok_url", tiktokUrl);
+        formData.append("facebook_url", facebookUrl);
 
-      formData.append("whatsapp_1", whatsapp1);
-      formData.append("whatsapp_1_nombre", whatsapp1Nombre);
+        formData.append("whatsapp_1", whatsapp1);
+        formData.append("whatsapp_1_nombre", whatsapp1Nombre);
 
-      formData.append("whatsapp_2", whatsapp2);
-      formData.append("whatsapp_2_nombre", whatsapp2Nombre);
+        formData.append("whatsapp_2", whatsapp2);
+        formData.append("whatsapp_2_nombre", whatsapp2Nombre);
 
-      formData.append("whatsapp_3", whatsapp3);
-      formData.append("whatsapp_3_nombre", whatsapp3Nombre);
+        formData.append("whatsapp_3", whatsapp3);
+        formData.append("whatsapp_3_nombre", whatsapp3Nombre);
 
-      const res = await actualizarRedesYContactos(formData);
-      if (res.success) {
-        showToast("Canales de Redes y WhatsApp guardados con éxito", "success");
-      } else {
-        showToast(res.error || "Error al guardar canales de contacto", "error");
+        const res = await actualizarRedesYContactos(formData);
+        if (res.success) {
+          showToast("Canales de Redes y WhatsApp guardados con éxito", "success");
+        } else {
+          showToast(res.error || "Error al guardar canales de contacto", "error");
+        }
+      } catch (err: unknown) {
+        console.error("Excepción en handleGuardarContactosYRedes:", err);
+        showToast("Error inesperado al guardar canales de contacto", "error");
       }
     });
   }
 
-  // Guardar Ajustes Comerciales en tabla tiendas
+  // Guardar Ajustes Comerciales en tabla tiendas mediante Server Action
   async function guardarAjustesComerciales(e: React.FormEvent) {
     e.preventDefault();
     setSavingComercial(true);
 
     try {
-      localStorage.setItem("ocumare_modo_ofertas", String(modoOfertas));
+      if (typeof window !== "undefined") {
+        localStorage.setItem("ocumare_modo_ofertas", String(modoOfertas));
+      }
 
-      await supabase
-        .from("tiendas")
-        .update({
-          nombre,
-          telefono,
-          modo_ofertas: modoOfertas,
-          permite_abono: permiteAbono,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", tiendaId);
+      const res = await actualizarDatosTienda({
+        tiendaId,
+        nombre,
+        telefono,
+        modoOfertas,
+        permiteAbono,
+      });
 
-      showToast("Ajustes comerciales actualizados con éxito", "success");
+      if (res.success) {
+        showToast("Ajustes comerciales actualizados con éxito", "success");
+      } else {
+        showToast(res.error || "Aviso: Ajustes guardados en sesión local", "info");
+      }
     } catch (err) {
-      console.warn("Aviso guardando en tiendas:", err);
+      console.warn("Aviso guardando ajustes comerciales:", err);
       showToast("Configuración guardada en la sesión actual", "success");
     } finally {
       setSavingComercial(false);

@@ -74,10 +74,13 @@ export function OrderP2PChat({ orden, onOrderUpdated }: OrderP2PChatProps) {
 
   async function cargarMensajes(ordenId: string) {
     try {
+      const ids = Array.from(new Set([ordenId, orden?.numero].filter(Boolean)));
+      const filterClause = ids.flatMap((id) => [`orden_id.eq.${id}`, `pedido_id.eq.${id}`]).join(",");
+
       const { data } = await supabase
         .from("mensajes_chat")
         .select("*")
-        .or(`orden_id.eq.${ordenId},pedido_id.eq.${ordenId}`)
+        .or(filterClause)
         .order("created_at", { ascending: true });
 
       if (data) {

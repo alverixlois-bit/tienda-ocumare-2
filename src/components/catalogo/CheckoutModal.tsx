@@ -25,6 +25,7 @@ import { createClient } from "@/lib/supabase/client";
 import { OrdenInsert, OrdenItemInsert, MetodoEntrega } from "@/types/database.types";
 import { formatoUSD, formatoVES } from "@/utils/currency";
 import { obtenerConfiguracionTienda, ConfiguracionTiendaData } from "@/actions/config";
+import { crearPedidoAction } from "@/actions/orders";
 
 export function CheckoutModal() {
   const router = useRouter();
@@ -139,147 +140,48 @@ export function CheckoutModal() {
     }
 
     try {
-      const tiendaId = process.env.NEXT_PUBLIC_TIENDA_ID || "11111111-1111-4111-8111-111111111111";
-      const numeroOrden = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
+      const formattedItems = listaItems.map((item) => {
+        const precioUsd =
+          item.producto.en_oferta && item.producto.precio_oferta
+            ? item.producto.precio_oferta
+            : item.producto.precio_base;
 
-      // 1. Crear Orden en Supabase
-      const ordenPayload: OrdenInsert = {
-        tienda_id: tiendaId,
-        numero: numeroOrden,
-        cliente_nombre: nombre.trim(),
-        cliente_telefono: telefono.trim(),
-        cliente_email: null,
-        cliente_id: null,
-        direccion_entrega: direccion.trim(),
-        metodo_entrega: metodoEntrega,
-        modalidad_pago: "abono",
-        estado: comprobanteUrl || referenciaPago ? "abono_verificado" : "pendiente",
-        moneda_base: "USD",
-        tasa_cambio_bcv: tasaBcv.toFixed(4),
-        subtotal_usd: subtotalUSD.toFixed(4),
-        total_usd: subtotalUSD.toFixed(4),
-        total_ves_exacto: subtotalVES.toFixed(2),
-        total_ves: subtotalVES.toFixed(2),
-        monto_inicial_usd: abonoUSD.toFixed(4),
-        monto_inicial_ves: abonoVES.toFixed(2),
-        saldo_pendiente_usd: saldoPendienteUSD.toFixed(4),
-        saldo_pendiente_ves: saldoPendienteVES.toFixed(2),
-        redondeo_ves_entero: false,
-        comprobante_url: comprobanteUrl || null,
-        referencia_pago: referenciaPago.trim() || null,
-        notas: `C.I/RIF: ${cedula.trim()} | Ref: ${referenciaPago.trim() || "S/R"} | Notas: ${notas.trim() || "Ninguna"}`,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+        return {
+          productoId: item.producto.id,
+          titulo: item.producto.titulo || item.producto.nombre || "Producto",
+          unidadMedida: item.producto.unidad_medida,
+          precioUsd,
+          cantidad: item.cantidad,
+        };
+      });
 
-      let pedidoFinalId = "";
+      const res = await crearPedidoAction({
+        nombre: nombre.trim(),
+        cedula: cedula.trim(),
+        telefono: telefono.trim(),
+        direccion: direccion.trim(),
+        metodoEntrega,
+        referenciaPago: referenciaPago.trim() || null,
+        comprobanteUrl: comprobanteUrl || null,
+        notas: notas.trim() || null,
+        subtotalUSD,
+        subtotalVES,
+        abonoUSD,
+        abonoVES,
+        saldoPendienteUSD,
+        saldoPendienteVES,
+        tasaBcv,
+        items: formattedItems,
+      });
 
-      // 1. Intentar insertar en ordenes
-      const { data: ordenCreada, error: errorOrden } = await supabase
-        .from("ordenes")
-        .insert([ordenPayload])
-        .select()
-        .single();
-
-      if (ordenCreada) {
-        pedidoFinalId = ordenCreada.id;
-
-        // 2. Crear ítems en orden_items
-        const itemsPayload: OrdenItemInsert[] = listaItems.map((item) => {
-          const precioUsd =
-            item.producto.en_oferta && item.producto.precio_oferta
-              ? item.producto.precio_oferta
-              : item.producto.precio_base;
-
-          const subtotalItemUsd = (parseFloat(precioUsd) * item.cantidad).toFixed(4);
-          const subtotalItemVes = (parseFloat(subtotalItemUsd) * tasaBcv).toFixed(2);
-          const precioUnitarioVes = (parseFloat(precioUsd) * tasaBcv).toFixed(2);
-
-          return {
-            orden_id: ordenCreada.id,
-            producto_id: item.producto.id,
-            producto_titulo: item.producto.titulo || item.producto.nombre || "Producto",
-            unidad_medida: item.producto.unidad_medida,
-            moneda_base: "USD",
-            precio_base: precioUsd,
-            precio_unitario_usd: parseFloat(precioUsd).toFixed(4),
-            precio_unitario_ves: precioUnitarioVes,
-            variantes_seleccionadas: null,
-            cantidad: String(item.cantidad),
-            subtotal_usd: subtotalItemUsd,
-            subtotal_ves_exacto: subtotalItemVes,
-            subtotal_ves: subtotalItemVes,
-            created_at: new Date().toISOString(),
-          };
-        });
-
-        await supabase.from("orden_items").insert(itemsPayload);
-      } else {
-        // Fallback a tabla pedidos existente en Supabase
-        console.warn("Aviso ordenes (guardando en pedidos):", errorOrden?.message);
-        const { data: pedidoCreado } = await supabase
-          .from("pedidos")
-          .insert([
-            {
-              cliente_nombre: nombre.trim(),
-              cliente_cedula: cedula.trim(),
-              cliente_telefono: telefono.trim(),
-              agencia_envio: `${metodoEntrega.toUpperCase()} - ${direccion.trim()}`,
-              estado_pago: comprobanteUrl || referenciaPago ? "abono_verificado" : "pendiente_abono",
-              referencia_pago: referenciaPago.trim() || null,
-              comprobante_url: comprobanteUrl || null,
-            },
-          ])
-          .select()
-          .single();
-
-        pedidoFinalId = pedidoCreado?.id || `PED-${Date.now()}`;
+      if (!res.success || !res.pedidoId) {
+        throw new Error(res.error || "No se pudo crear el pedido");
       }
 
-      // 3. Registrar en auditoria_logs si existe la tabla
-      try {
-        await supabase.from("auditoria_logs").insert([
-          {
-            email: "cliente@ocumarehub.com",
-            accion: "pedido_creado",
-            tabla: "pedidos",
-            registro_id: pedidoFinalId,
-            detalles: {
-              numeroOrden,
-              cliente: nombre.trim(),
-              cedula: cedula.trim(),
-              totalUsd: subtotalUSD,
-              abonoUsd: abonoUSD,
-              referencia: referenciaPago.trim() || null,
-              comprobanteUrl: comprobanteUrl || null,
-            },
-          } as any,
-        ]);
-      } catch (errAudit) {
-        console.warn("Aviso auditoria checkout:", errAudit);
-      }
-
-      // 4. Crear mensaje inicial en el chat privado del pedido
-      const msgRef = referenciaPago.trim() ? ` y referencia #${referenciaPago.trim()}` : "";
-      const msgCapture = comprobanteUrl ? " Comprobante de pago recibido." : "";
-      await supabase.from("mensajes_chat").insert([
-        {
-          tienda_id: tiendaId,
-          orden_id: pedidoFinalId,
-          pedido_id: pedidoFinalId,
-          remitente: "sistema",
-          cliente_id: null,
-          remitente_rol: "sistema",
-          mensaje: `👋 ¡Hola ${nombre.trim()}! Tu encargo #${numeroOrden} fue registrado exitosamente con abono del 50% (${formatoUSD(abonoUSD)} / ${formatoVES(abonoVES)})${msgRef}.${msgCapture} El vendedor verificará tu pago a la brevedad.`,
-          leido: false,
-          created_at: new Date().toISOString(),
-        } as any,
-      ]);
-
-      // 5. Limpiar carrito y redirigir
+      // Limpiar carrito y redirigir
       limpiarCarrito();
       setIsCheckoutOpen(false);
-      router.push(`/pedido/${pedidoFinalId}`);
+      router.push(`/pedido/${res.pedidoId}`);
     } catch (err: unknown) {
       console.error("Error al procesar checkout:", err);
       const msg = err instanceof Error ? err.message : "Error al procesar el encargo";

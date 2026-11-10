@@ -88,7 +88,7 @@ export function OrdersTab({ showToast }: OrdersTabProps) {
         if (pedidosData && pedidosData.length > 0) {
           const mapped: OrdenRow[] = pedidosData.map((p) => ({
             id: p.id,
-            numero: p.id.slice(0, 8).toUpperCase(),
+            numero: (p as any).numero_orden || (p as any).numero || `PED-${p.id.slice(0, 8).toUpperCase()}`,
             tienda_id: tiendaId,
             cliente_id: null,
             cliente_nombre: p.cliente_nombre,
@@ -109,8 +109,9 @@ export function OrdersTab({ showToast }: OrdersTabProps) {
             saldo_pendiente_usd: "0.00",
             saldo_pendiente_ves: "0.00",
             redondeo_ves_entero: false,
-            comprobante_url: null,
-            notas: `C.I: ${p.cliente_cedula}`,
+            comprobante_url: p.comprobante_url || null,
+            referencia_pago: p.referencia_pago || null,
+            notas: `C.I: ${p.cliente_cedula}${p.referencia_pago ? ` | Ref: ${p.referencia_pago}` : ""}`,
             created_at: p.created_at || new Date().toISOString(),
             updated_at: p.created_at || new Date().toISOString(),
           }));

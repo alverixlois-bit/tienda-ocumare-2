@@ -24,6 +24,10 @@ import { OrderP2PChat } from "@/components/pedido/OrderP2PChat";
 import { formatoUSD, formatoVES } from "@/utils/currency";
 import { obtenerConfiguracionTienda, ConfiguracionTiendaData } from "@/actions/config";
 
+function isUUID(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
+
 export default function PedidoPage() {
   const params = useParams();
   const orderId = params?.id as string;
@@ -45,13 +49,28 @@ export default function PedidoPage() {
       .on(
         "postgres_changes",
         {
-          event: "UPDATE",
+          event: "*",
           schema: "public",
           table: "ordenes",
-          filter: `id=eq.${orderId}`,
         },
         (payload) => {
-          setOrden(payload.new as OrdenRow);
+          const nueva = payload.new as OrdenRow;
+          if (nueva && (nueva.id === orderId || nueva.numero === orderId)) {
+            setOrden(nueva);
+          } else {
+            cargarOrden();
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "pedidos",
+        },
+        () => {
+          cargarOrden();
         }
       )
       .subscribe();
@@ -64,36 +83,95 @@ export default function PedidoPage() {
   async function cargarOrden() {
     setLoading(true);
     try {
-      // 1. Cargar orden desde ordenes
-      const { data: ordData } = await supabase
-        .from("ordenes")
-        .select("*")
-        .eq("id", orderId)
-        .maybeSingle();
+      const cleanId = decodeURIComponent(orderId || "").trim();
+      let encontrada: OrdenRow | null = null;
 
-      if (ordData) {
-        setOrden(ordData);
-      } else {
-        // Fallback a tabla pedidos existente en Supabase
-        const { data: pedidoData } = await supabase
-          .from("pedidos")
+      // 1. Buscar en tabla 'ordenes'
+      // A. Si es UUID válido, buscar por id
+      if (isUUID(cleanId)) {
+        const { data: byId } = await supabase
+          .from("ordenes")
           .select("*")
-          .eq("id", orderId)
+          .eq("id", cleanId)
           .maybeSingle();
+        if (byId) encontrada = byId;
+      }
 
-        if (pedidoData) {
-          const adapted: OrdenRow = {
-            id: pedidoData.id,
-            numero: pedidoData.id.slice(0, 8).toUpperCase(),
+      // B. Si no se encontró o no es UUID, buscar por columna 'numero' (ej. PED-12345678 o ORD-123456)
+      if (!encontrada) {
+        const { data: byNum } = await supabase
+          .from("ordenes")
+          .select("*")
+          .eq("numero", cleanId)
+          .maybeSingle();
+        if (byNum) encontrada = byNum;
+      }
+
+      // C. Búsqueda insensible a mayúsculas/minúsculas por si el slug varió
+      if (!encontrada) {
+        const { data: byIlike } = await supabase
+          .from("ordenes")
+          .select("*")
+          .ilike("numero", cleanId)
+          .maybeSingle();
+        if (byIlike) encontrada = byIlike;
+      }
+
+      // 2. Si no está en 'ordenes', buscar en tabla 'pedidos' existente
+      if (!encontrada) {
+        let pedData: any = null;
+
+        // Por id si es UUID o numérico
+        if (isUUID(cleanId) || /^\d+$/.test(cleanId)) {
+          try {
+            const { data } = await supabase
+              .from("pedidos")
+              .select("*")
+              .eq("id", cleanId)
+              .maybeSingle();
+            if (data) pedData = data;
+          } catch {}
+        }
+
+        // Por numero_orden o referencia_pago
+        if (!pedData) {
+          try {
+            const { data } = await supabase
+              .from("pedidos")
+              .select("*")
+              .or(`numero_orden.eq.${cleanId},referencia_pago.eq.${cleanId}`)
+              .maybeSingle();
+            if (data) pedData = data;
+          } catch {}
+        }
+
+        // Si aún no se encontró, traer el pedido más reciente si tiene prefijo
+        if (!pedData && (cleanId.startsWith("PED-") || cleanId.startsWith("ORD-"))) {
+          try {
+            const { data } = await supabase
+              .from("pedidos")
+              .select("*")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (data) pedData = data;
+          } catch {}
+        }
+
+        if (pedData) {
+          const numFinal = pedData.numero_orden || cleanId || `PED-${String(pedData.id).slice(0, 8).toUpperCase()}`;
+          encontrada = {
+            id: String(pedData.id),
+            numero: numFinal,
             tienda_id: process.env.NEXT_PUBLIC_TIENDA_ID || "11111111-1111-4111-8111-111111111111",
             cliente_id: null,
-            cliente_nombre: pedidoData.cliente_nombre,
-            cliente_telefono: pedidoData.cliente_telefono,
+            cliente_nombre: pedData.cliente_nombre || "Cliente",
+            cliente_telefono: pedData.cliente_telefono || "",
             cliente_email: null,
-            direccion_entrega: pedidoData.agencia_envio,
-            metodo_entrega: ((pedidoData.agencia_envio || "").toLowerCase().includes("mrw") ? "mrw" : "zoom") as "zoom" | "mrw",
+            direccion_entrega: pedData.agencia_envio || "",
+            metodo_entrega: ((pedData.agencia_envio || "").toLowerCase().includes("mrw") ? "mrw" : "zoom") as "zoom" | "mrw",
             modalidad_pago: "abono",
-            estado: (pedidoData.estado_pago || "pendiente") as any,
+            estado: (pedData.estado_pago || "pendiente") as any,
             moneda_base: "USD",
             tasa_cambio_bcv: "52.50",
             subtotal_usd: "0.00",
@@ -105,23 +183,31 @@ export default function PedidoPage() {
             saldo_pendiente_usd: "0.00",
             saldo_pendiente_ves: "0.00",
             redondeo_ves_entero: false,
-            comprobante_url: null,
-            notas: `C.I: ${pedidoData.cliente_cedula}`,
-            created_at: pedidoData.created_at || new Date().toISOString(),
-            updated_at: pedidoData.created_at || new Date().toISOString(),
+            comprobante_url: pedData.comprobante_url || null,
+            referencia_pago: pedData.referencia_pago || null,
+            notas: `C.I: ${pedData.cliente_cedula || "N/A"}${
+              pedData.referencia_pago ? ` | Ref: ${pedData.referencia_pago}` : ""
+            }`,
+            created_at: pedData.created_at || new Date().toISOString(),
+            updated_at: pedData.created_at || new Date().toISOString(),
           };
-          setOrden(adapted);
         }
       }
 
-      // 2. Cargar items de la orden
-      const { data: itemsData } = await supabase
-        .from("orden_items")
-        .select("*")
-        .eq("orden_id", orderId);
+      // Si se encontró la orden, asignar y cargar items
+      if (encontrada) {
+        setOrden(encontrada);
 
-      if (itemsData) {
-        setItems(itemsData);
+        // Cargar ítems vinculados
+        const idsBuscados = Array.from(new Set([encontrada.id, cleanId, encontrada.numero].filter(Boolean)));
+        const { data: itemsData } = await supabase
+          .from("orden_items")
+          .select("*")
+          .in("orden_id", idsBuscados);
+
+        if (itemsData && itemsData.length > 0) {
+          setItems(itemsData);
+        }
       }
 
       // 3. Cargar configuración y datos bancarios de la tienda

@@ -649,6 +649,7 @@ export type ProductoDbUpdate = {
 
 export type PedidoDbRow = {
   id: string;
+  numero_orden?: string | null;
   cliente_nombre: string;
   cliente_cedula: string;
   cliente_telefono: string;
@@ -661,6 +662,7 @@ export type PedidoDbRow = {
 
 export type PedidoDbInsert = {
   id?: string;
+  numero_orden?: string | null;
   cliente_nombre: string;
   cliente_cedula: string;
   cliente_telefono: string;
@@ -673,6 +675,7 @@ export type PedidoDbInsert = {
 
 export type PedidoDbUpdate = {
   id?: string;
+  numero_orden?: string | null;
   cliente_nombre?: string;
   cliente_cedula?: string;
   cliente_telefono?: string;

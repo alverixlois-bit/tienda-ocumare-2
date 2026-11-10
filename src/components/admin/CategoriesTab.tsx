@@ -72,7 +72,13 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
     setEditingCategoria(cat);
     setFormNombre(cat.nombre || "");
     setFormDescripcion(cat.descripcion || "");
-    setFormOrden(cat.orden !== undefined && cat.orden !== null ? cat.orden.toString() : "0");
+    const posVal =
+      cat.orden !== undefined && cat.orden !== null
+        ? cat.orden
+        : (cat as any).posicion !== undefined && (cat as any).posicion !== null
+        ? (cat as any).posicion
+        : 0;
+    setFormOrden(posVal.toString());
     setFormActivo(cat.activo ?? true);
     setIsModalOpen(true);
   };
@@ -261,7 +267,7 @@ export function CategoriesTab({ showToast }: CategoriesTabProps) {
               </div>
 
               <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
-                <span>Orden: #{cat.orden ?? 0}</span>
+                <span>Orden: #{cat.orden ?? (cat as any).posicion ?? 0}</span>
                 <span>
                   {cat.created_at
                     ? new Date(cat.created_at).toLocaleDateString()
