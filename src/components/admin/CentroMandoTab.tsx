@@ -19,11 +19,14 @@ import {
   FileCheck2,
   Phone,
   Send,
+  Share2,
+  FileText,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { OrdenRow } from "@/types/database.types";
 import { formatoUSD, formatoVES } from "@/utils/currency";
 import { TasaBCVCard } from "@/components/admin/TasaBCVCard";
+import { DigitalReceiptModal } from "@/components/admin/DigitalReceiptModal";
 import {
   actualizarEstadoOrdenAction,
   asignarGuiaEnvioAction,
@@ -61,6 +64,9 @@ export function CentroMandoTab({
   const [pinInput, setPinInput] = useState<string>("");
   const [validandoPin, setValidandoPin] = useState<boolean>(false);
   const [pinError, setPinError] = useState<string | null>(null);
+
+  // Modal Recibo Digital
+  const [modalReciboOrden, setModalReciboOrden] = useState<OrdenRow | null>(null);
 
   const supabase = createClient();
 
@@ -473,8 +479,174 @@ export function CentroMandoTab({
           <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
         </div>
 
-        {/* Tabla de Órdenes */}
-        <div className="overflow-x-auto">
+        {/* Vista Móvil: Lista de Tarjetas Táctiles (< md) */}
+        <div className="md:hidden space-y-3">
+          {ordenesFiltradas.length === 0 ? (
+            <div className="py-10 text-center text-slate-500 text-xs">
+              No hay órdenes en esta categoría.
+            </div>
+          ) : (
+            ordenesFiltradas.map((ord) => {
+              const esPersonal =
+                ord.metodo_entrega === "personal" ||
+                (ord as any).tipo_entrega === "personal" ||
+                (ord.direccion_entrega || "").toLowerCase().includes("personal");
+
+              const saldoUsdVal = (ord as any).saldo_restante_usd || (ord as any).saldo_pendiente_usd || (parseFloat(String(ord.total_usd || 0)) - parseFloat(String(ord.monto_inicial_usd || 0)));
+
+              return (
+                <div
+                  key={`card-${ord.id}`}
+                  className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3 shadow-xs"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="font-mono font-bold text-white text-sm">
+                        #{ord.numero}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block font-mono">
+                        {new Date(ord.created_at).toLocaleDateString("es-VE")} &bull; {ord.cliente_nombre}
+                      </span>
+                    </div>
+
+                    <span
+                      className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                        ord.estado === "entregado" || ord.estado === "completada"
+                          ? "bg-green-500/10 text-green-400 border border-green-500/20"
+                          : ord.estado === "despachado"
+                          ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                          : ord.estado === "abono_verificado" || ord.estado === "pagada"
+                          ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                          : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                      }`}
+                    >
+                      {ord.estado}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-[11px]">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Total / Abono:</span>
+                      <span className="font-mono font-bold text-white block">
+                        {formatoUSD(ord.total_usd)}
+                      </span>
+                      <span className="text-[10px] text-emerald-400 font-mono">
+                        Abono: {formatoUSD(ord.monto_inicial_usd)}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Modalidad:</span>
+                      <span className="font-semibold text-slate-200 uppercase block truncate">
+                        {ord.metodo_entrega}
+                      </span>
+                      <span className="text-[10px] text-slate-400 truncate block">
+                        {ord.direccion_entrega || "Ocumare"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Acciones Táctiles Móviles */}
+                  <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-800/60">
+                    <div className="flex items-center gap-1.5">
+                      {ord.comprobante_url ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalCaptureUrl(ord.comprobante_url);
+                            setOrdenParaCapture(ord);
+                          }}
+                          className="min-h-[38px] px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 font-semibold text-[11px] flex items-center gap-1"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Capture</span>
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-slate-500">
+                          {ord.referencia_pago ? `Ref: ${ord.referencia_pago}` : "Sin capture"}
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setModalReciboOrden(ord)}
+                        className="min-h-[38px] p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
+                        title="Ver Comprobante QR"
+                      >
+                        <FileText className="w-4 h-4 text-[#84CC16]" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cleanTel = (ord.cliente_telefono || "").replace(/\D/g, "");
+                          const guiaTxt = (ord as any).guia_seguimiento ? `\n📦 *Guía de Seguimiento:* ${(ord as any).guia_seguimiento}` : "";
+                          const saldoTxt = saldoUsdVal > 0 ? `\n💵 *Saldo restante por cancelar (50%):* ${formatoUSD(saldoUsdVal)} (${formatoVES(saldoUsdVal * tasaBcv)})` : "";
+                          const mensaje = `Hola *${ord.cliente_nombre}*, te escribimos de *Boutique Por Encargo* 💎.\n\n` +
+                            `Te informamos que tu encargo *#${ord.numero}* se encuentra en estatus: *${ord.estado.toUpperCase()}*.${guiaTxt}${saldoTxt}\n\n` +
+                            `Puedes consultar el estatus en tiempo real en:\n` +
+                            `${window.location.origin}/pedido/${ord.numero}\n\n` +
+                            `¡Gracias por tu confianza!`;
+                          const waUrl = cleanTel
+                            ? `https://api.whatsapp.com/send?phone=${cleanTel.startsWith("58") ? cleanTel : "58" + cleanTel.replace(/^0/, "")}&text=${encodeURIComponent(mensaje)}`
+                            : `https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`;
+                          window.open(waUrl, "_blank");
+                        }}
+                        className="min-h-[38px] p-2 rounded-xl bg-[#25D366]/20 text-[#25D366]"
+                        title="WhatsApp"
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {esPersonal && ord.estado !== "entregado" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalPinOrden(ord);
+                            setPinInput("");
+                            setPinError(null);
+                          }}
+                          className="min-h-[38px] px-3 py-1 rounded-xl bg-purple-600 text-white font-bold text-[11px]"
+                        >
+                          PIN
+                        </button>
+                      )}
+
+                      {!esPersonal && ord.estado !== "despachado" && ord.estado !== "entregado" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalGuiaOrden(ord);
+                            setEmpresaGuia(ord.metodo_entrega === "tealca" ? "Tealca" : ord.metodo_entrega === "mrw" ? "MRW" : "Zoom");
+                            setNumeroGuiaInput((ord as any).guia_seguimiento || "");
+                          }}
+                          className="min-h-[38px] px-3 py-1 rounded-xl bg-blue-600 text-white font-bold text-[11px]"
+                        >
+                          Guía
+                        </button>
+                      )}
+
+                      {onNavigateToChat && (
+                        <button
+                          type="button"
+                          onClick={() => onNavigateToChat(ord.id)}
+                          className="min-h-[38px] p-2 rounded-xl bg-slate-800 text-slate-300"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Tabla de Órdenes Desktop (>= md) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-slate-800 text-slate-400 text-[11px] uppercase tracking-wider font-semibold">
@@ -579,6 +751,40 @@ export function CentroMandoTab({
 
                       <td className="py-3.5 px-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* Botón 1-Click WhatsApp Despacho Stitch */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cleanTel = (ord.cliente_telefono || "").replace(/\D/g, "");
+                              const guiaTxt = (ord as any).guia_seguimiento ? `\n📦 *Guía de Seguimiento:* ${(ord as any).guia_seguimiento}` : "";
+                              const saldoUsdVal = (ord as any).saldo_restante_usd || (ord as any).saldo_pendiente_usd || (parseFloat(String(ord.total_usd || 0)) - parseFloat(String(ord.monto_inicial_usd || 0)));
+                              const saldoTxt = saldoUsdVal > 0 ? `\n💵 *Saldo restante por cancelar (50%):* ${formatoUSD(saldoUsdVal)} (${formatoVES(saldoUsdVal * tasaBcv)})` : "";
+                              const mensaje = `Hola *${ord.cliente_nombre}*, te escribimos de *Boutique Por Encargo* 💎.\n\n` +
+                                `Te informamos que tu encargo *#${ord.numero}* se encuentra en estatus: *${ord.estado.toUpperCase()}*.${guiaTxt}${saldoTxt}\n\n` +
+                                `Puedes consultar el estatus en tiempo real en:\n` +
+                                `${window.location.origin}/pedido/${ord.numero}\n\n` +
+                                `¡Gracias por tu confianza!`;
+                              const waUrl = cleanTel
+                                ? `https://api.whatsapp.com/send?phone=${cleanTel.startsWith("58") ? cleanTel : "58" + cleanTel.replace(/^0/, "")}&text=${encodeURIComponent(mensaje)}`
+                                : `https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`;
+                              window.open(waUrl, "_blank");
+                            }}
+                            className="p-1.5 rounded-lg bg-[#25D366]/20 hover:bg-[#25D366]/30 text-[#25D366] transition-colors"
+                            title="Enviar Notificación WhatsApp"
+                          >
+                            <Share2 className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Botón Ver Comprobante Digital */}
+                          <button
+                            type="button"
+                            onClick={() => setModalReciboOrden(ord)}
+                            className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 transition-colors"
+                            title="Ver Comprobante Digital & QR"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                          </button>
+
                           {esPersonal && ord.estado !== "entregado" && (
                             <button
                               type="button"
@@ -632,8 +838,8 @@ export function CentroMandoTab({
 
       {/* Modal Visualizador de Capture de Pago */}
       {modalCaptureUrl && ordenParaCapture && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full sm:max-w-lg bg-slate-900 border-t sm:border border-slate-800 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <div>
                 <h4 className="font-display font-bold text-white text-sm">
@@ -691,10 +897,10 @@ export function CentroMandoTab({
 
       {/* Modal Asignar Guía de Envío */}
       {modalGuiaOrden && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
           <form
             onSubmit={handleGuardarGuia}
-            className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4"
+            className="relative w-full sm:max-w-md bg-slate-900 border-t sm:border border-slate-800 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto"
           >
             <div className="flex items-center justify-between">
               <h4 className="font-display font-bold text-white text-sm">
@@ -763,10 +969,10 @@ export function CentroMandoTab({
 
       {/* Modal Validar PIN de 4 dígitos */}
       {modalPinOrden && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
           <form
             onSubmit={handleValidarPin}
-            className="relative w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4"
+            className="relative w-full sm:max-w-sm bg-slate-900 border-t sm:border border-slate-800 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -825,6 +1031,28 @@ export function CentroMandoTab({
             </div>
           </form>
         </div>
+      )}
+      {/* Modal Comprobante Digital Stitch */}
+      {modalReciboOrden && (
+        <DigitalReceiptModal
+          orden={{
+            numero: modalReciboOrden.numero,
+            cliente_nombre: modalReciboOrden.cliente_nombre,
+            cliente_telefono: modalReciboOrden.cliente_telefono,
+            cliente_cedula: (modalReciboOrden as any).cliente_cedula,
+            metodo_entrega: modalReciboOrden.metodo_entrega,
+            direccion_entrega: modalReciboOrden.direccion_entrega,
+            total_usd: parseFloat(String(modalReciboOrden.total_usd || 0)),
+            monto_inicial_usd: parseFloat(String(modalReciboOrden.monto_inicial_usd || 0)),
+            saldo_restante_usd: parseFloat(String((modalReciboOrden as any).saldo_restante_usd || (modalReciboOrden as any).saldo_pendiente_usd || (parseFloat(String(modalReciboOrden.total_usd || 0)) - parseFloat(String(modalReciboOrden.monto_inicial_usd || 0))))),
+            estado: modalReciboOrden.estado,
+            created_at: modalReciboOrden.created_at,
+            referencia_pago: modalReciboOrden.referencia_pago,
+            guia_seguimiento: (modalReciboOrden as any).guia_seguimiento,
+          }}
+          tasaBcv={tasaBcv}
+          onClose={() => setModalReciboOrden(null)}
+        />
       )}
     </div>
   );

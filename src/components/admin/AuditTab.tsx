@@ -155,7 +155,7 @@ export function AuditTab({ showToast }: AuditTabProps) {
         </div>
       </div>
 
-      {/* Tabla de Registros */}
+      {/* Registros: Tarjetas Móviles (< md) y Tabla Desktop (>= md) */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
           <RefreshCw className="w-8 h-8 animate-spin mb-3 text-cyan-400" />
@@ -170,89 +170,144 @@ export function AuditTab({ showToast }: AuditTabProps) {
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/60 backdrop-blur shadow-xl">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-slate-800 bg-slate-950/70 text-slate-400 uppercase font-mono text-[11px]">
-                <th className="py-3 px-4">Fecha y Hora</th>
-                <th className="py-3 px-4">Admin / Usuario</th>
-                <th className="py-3 px-4">Acción</th>
-                <th className="py-3 px-4">Tabla</th>
-                <th className="py-3 px-4">ID Registro</th>
-                <th className="py-3 px-4">Detalles</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 text-slate-300">
-              {filteredLogs.map((log) => {
-                const detallesText =
-                  typeof log.detalles === "object" && log.detalles !== null
-                    ? JSON.stringify(log.detalles, null, 1)
-                    : String(log.detalles || "Sin detalles");
+        <>
+          {/* Vista Móvil: Tarjetas Táctiles (< md) */}
+          <div className="md:hidden space-y-3">
+            {filteredLogs.map((log) => {
+              const detallesText =
+                typeof log.detalles === "object" && log.detalles !== null
+                  ? JSON.stringify(log.detalles, null, 1)
+                  : String(log.detalles || "Sin detalles");
 
-                return (
-                  <tr key={log.id} className="hover:bg-slate-800/40 transition-colors">
-                    {/* Fecha y hora */}
-                    <td className="py-3 px-4 font-mono text-slate-400 whitespace-nowrap">
+              return (
+                <div
+                  key={`card-${log.id}`}
+                  className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2 text-xs"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wider ${getBadgeColor(
+                        log.accion
+                      )}`}
+                    >
+                      {log.accion}
+                    </span>
+
+                    <span className="font-mono text-[10px] text-slate-400">
                       {new Date(log.created_at).toLocaleString("es-VE", {
                         day: "2-digit",
                         month: "2-digit",
-                        year: "numeric",
                         hour: "2-digit",
                         minute: "2-digit",
-                        second: "2-digit",
                       })}
-                    </td>
+                    </span>
+                  </div>
 
-                    {/* Email del actor */}
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5 font-medium text-slate-200">
-                        <User className="w-3.5 h-3.5 text-slate-500" />
-                        <span>{log.email || "admin@ocumarehub.com"}</span>
-                      </div>
-                    </td>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <div className="flex items-center gap-1.5 text-slate-300 truncate max-w-[200px]">
+                      <User className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      <span className="truncate">{log.email || "admin@ocumarehub.com"}</span>
+                    </div>
 
-                    {/* Acción con Badge */}
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${getBadgeColor(
-                          log.accion
-                        )}`}
-                      >
-                        {log.accion}
-                      </span>
-                    </td>
+                    <div className="flex items-center gap-1 font-mono text-[10px] text-cyan-300 shrink-0">
+                      <Database className="w-3 h-3 text-cyan-400" />
+                      <span>{log.tabla || "general"}</span>
+                    </div>
+                  </div>
 
-                    {/* Tabla Afectada */}
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5 font-mono text-[11px] text-cyan-300">
-                        <Database className="w-3 h-3 text-cyan-400" />
-                        <span>{log.tabla || "general"}</span>
-                      </div>
-                    </td>
+                  {log.registro_id && (
+                    <div className="text-[10px] text-slate-400 font-mono">
+                      Registro: <span className="text-slate-200">{log.registro_id}</span>
+                    </div>
+                  )}
 
-                    {/* Registro ID */}
-                    <td className="py-3 px-4 font-mono text-slate-400 whitespace-nowrap">
-                      {log.registro_id ? (
-                        <span className="bg-slate-950 px-2 py-0.5 rounded border border-slate-800 text-slate-300 text-[11px]">
-                          {log.registro_id}
+                  <div className="p-2 rounded-xl bg-slate-950 border border-slate-800 text-[10px] font-mono text-slate-400 truncate">
+                    {detallesText}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Vista Desktop: Tabla Clásica (>= md) */}
+          <div className="hidden md:block overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/60 backdrop-blur shadow-xl">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-slate-800 bg-slate-950/70 text-slate-400 uppercase font-mono text-[11px]">
+                  <th className="py-3 px-4">Fecha y Hora</th>
+                  <th className="py-3 px-4">Admin / Usuario</th>
+                  <th className="py-3 px-4">Acción</th>
+                  <th className="py-3 px-4">Tabla</th>
+                  <th className="py-3 px-4">ID Registro</th>
+                  <th className="py-3 px-4">Detalles</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                {filteredLogs.map((log) => {
+                  const detallesText =
+                    typeof log.detalles === "object" && log.detalles !== null
+                      ? JSON.stringify(log.detalles, null, 1)
+                      : String(log.detalles || "Sin detalles");
+
+                  return (
+                    <tr key={log.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3 px-4 font-mono text-slate-400 whitespace-nowrap">
+                        {new Date(log.created_at).toLocaleString("es-VE", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}
+                      </td>
+
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 font-medium text-slate-200">
+                          <User className="w-3.5 h-3.5 text-slate-500" />
+                          <span>{log.email || "admin@ocumarehub.com"}</span>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${getBadgeColor(
+                            log.accion
+                          )}`}
+                        >
+                          {log.accion}
                         </span>
-                      ) : (
-                        <span className="text-slate-600">-</span>
-                      )}
-                    </td>
+                      </td>
 
-                    {/* Detalles */}
-                    <td className="py-3 px-4 text-[11px]">
-                      <code className="bg-slate-950/80 border border-slate-800/80 px-2 py-1 rounded text-slate-300 font-mono block max-w-md truncate" title={detallesText}>
-                        {detallesText}
-                      </code>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 font-mono text-[11px] text-cyan-300">
+                          <Database className="w-3 h-3 text-cyan-400" />
+                          <span>{log.tabla || "general"}</span>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4 font-mono text-slate-400 whitespace-nowrap">
+                        {log.registro_id ? (
+                          <span className="bg-slate-950 px-2 py-0.5 rounded border border-slate-800 text-slate-300 text-[11px]">
+                            {log.registro_id}
+                          </span>
+                        ) : (
+                          <span className="text-slate-600">-</span>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-4 text-[11px]">
+                        <code className="bg-slate-950/80 border border-slate-800/80 px-2 py-1 rounded text-slate-300 font-mono block max-w-md truncate" title={detallesText}>
+                          {detallesText}
+                        </code>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Store,
   ExternalLink,
+  MessageCircle,
 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { createClient } from "@/lib/supabase/client";
@@ -539,19 +540,19 @@ export default function StorefrontHomePage() {
         </div>
       </section>
 
-      {/* 5. Catálogo Interactivo en Grid */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex-1">
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-xs font-bold text-slate-500">
-            Mostrando {productosFiltrados.length} artículos en preventa
+      {/* 5. Catálogo Interactivo en Grid Mobile-First (2 cols en móvil) */}
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-4 flex-1">
+        <div className="flex items-center justify-between mb-3 sm:mb-4">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-500">
+            {productosFiltrados.length} artículos en preventa
           </span>
-          <span className="text-[11px] text-[#064E3B] font-bold">
-            Conversión en vivo con Decimal.js
+          <span className="text-[10px] sm:text-[11px] text-[#064E3B] font-bold">
+            Tasa BCV oficial &bull; Abono 50%
           </span>
         </div>
 
         {productosFiltrados.length === 0 ? (
-          <div className="text-center py-24 bg-white rounded-3xl border border-slate-200 p-8">
+          <div className="text-center py-20 bg-white rounded-3xl border border-slate-200 p-6 sm:p-8">
             <ShoppingBag className="w-12 h-12 mx-auto text-slate-300 mb-3" />
             <h3 className="font-display font-bold text-slate-800 text-base">
               No se encontraron productos
@@ -561,7 +562,7 @@ export default function StorefrontHomePage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
             {productosFiltrados.map((prod) => (
               <ProductCard
                 key={prod.id}
@@ -650,6 +651,20 @@ export default function StorefrontHomePage() {
           onClose={() => setVideoModalData(null)}
         />
       )}
+
+      {/* Botón Flotante de WhatsApp para Soporte Inmediato */}
+      <a
+        href="https://api.whatsapp.com/send?phone=584129998877&text=Hola%2C%20quisiera%20consultar%20sobre%20un%20producto%20por%20encargo%20en%20Boutique%20Ocumare%20%F0%9F%92%8E"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-6 right-6 z-40 bg-[#25D366] hover:bg-[#20BD5A] text-slate-950 p-3.5 rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2 group"
+        title="Contactar Asesor por WhatsApp"
+      >
+        <MessageCircle className="w-6 h-6 text-slate-950 fill-current" />
+        <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 ease-in-out whitespace-nowrap font-bold text-xs text-slate-950 pr-1">
+          ¿Dudas? Chatea con nosotros
+        </span>
+      </a>
     </div>
   );
 }

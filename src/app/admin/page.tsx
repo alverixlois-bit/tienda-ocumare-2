@@ -100,10 +100,18 @@ export default function UnifiedAdminMasterSPA() {
         />
       )}
 
-      {/* 1. Sidebar Fijo Master ERP (Stitch Design) */}
+      {/* 1. Sidebar Fijo en Desktop / Drawer Móvil Desplegable con Overlay */}
+      {/* Overlay Backdrop Móvil */}
+      {isSidebarOpen && (
+        <div
+          onClick={() => setIsSidebarOpen(false)}
+          className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm md:hidden transition-opacity"
+        />
+      )}
+
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0B1320] border-r border-slate-800 flex flex-col justify-between transition-transform duration-300 md:static md:translate-x-0 ${
-          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-[#0B1320] border-r border-slate-800 flex flex-col justify-between transition-transform duration-300 ease-in-out md:static md:w-64 md:translate-x-0 ${
+          isSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"
         }`}
       >
         <div className="flex flex-col flex-1 overflow-y-auto">
@@ -205,46 +213,47 @@ export default function UnifiedAdminMasterSPA() {
       {/* 2. Área de Contenido Principal (SPA) */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         
-        {/* Top Header Barra Superior */}
-        <header className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
+        {/* Top Header Barra Superior Compacta y Responsiva */}
+        <header className="h-14 sm:h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between shrink-0 gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="md:hidden p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800"
+              className="md:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl text-slate-300 hover:text-white bg-slate-800/80 active:scale-95 transition-all shrink-0"
+              aria-label="Abrir menú"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="w-5 h-5 text-[#84CC16]" />
             </button>
 
-            <div>
-              <h2 className="font-display font-extrabold text-sm sm:text-base text-white capitalize leading-tight">
+            <div className="min-w-0">
+              <h2 className="font-display font-extrabold text-xs sm:text-base text-white capitalize leading-tight truncate">
                 {activeTab.replace("_", " ")}
               </h2>
-              <span className="text-[11px] text-slate-400">
-                Encargos Boutique &bull; OcumareHub Central Control
+              <span className="text-[10px] sm:text-[11px] text-slate-400 hidden xs:block truncate">
+                Encargos Boutique &bull; OcumareHub
               </span>
             </div>
           </div>
 
-          {/* Tasa BCV & Indicadores de Estado */}
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs">
-              <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-slate-400">Tasa Oficial BCV:</span>
+          {/* Tasa BCV & Indicadores de Estado Móviles */}
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] sm:text-xs">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="text-slate-400 hidden sm:inline">Tasa BCV:</span>
               <span className="font-mono font-bold text-[#84CC16]">
                 Bs. {tasaBcv.toFixed(2)}
               </span>
             </div>
 
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">Supabase Realtime</span>
+            <span className="inline-flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1 rounded-full text-[10px] sm:text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
+              <span className="hidden md:inline">Supabase Realtime</span>
             </span>
           </div>
         </header>
 
         {/* Contenido Dinámico de la Pestaña Activa */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#0B1320]/60">
-          <div className="max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-6 bg-[#0B1320]/60 overflow-x-hidden">
+          <div className="max-w-7xl mx-auto w-full">
             {activeTab === "centro_mando" && (
               <CentroMandoTab
                 tasaBcv={tasaBcv}

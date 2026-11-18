@@ -24,6 +24,7 @@ import { OrderStatusTracker } from "@/components/pedido/OrderStatusTracker";
 import { PaymentDetailsBox } from "@/components/pedido/PaymentDetailsBox";
 import { WhatsAppReporterBox } from "@/components/pedido/WhatsAppReporterBox";
 import { OrderP2PChat } from "@/components/pedido/OrderP2PChat";
+import { DigitalReceiptModal } from "@/components/admin/DigitalReceiptModal";
 import { formatoUSD, formatoVES } from "@/utils/currency";
 import { obtenerConfiguracionTienda, ConfiguracionTiendaData } from "@/actions/config";
 
@@ -39,6 +40,7 @@ export default function PedidoPage() {
   const [items, setItems] = useState<OrdenItemRow[]>([]);
   const [configTienda, setConfigTienda] = useState<ConfiguracionTiendaData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mostrarComprobante, setMostrarComprobante] = useState(false);
 
   const supabase = createClient();
 
@@ -288,6 +290,13 @@ export default function PedidoPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMostrarComprobante(true)}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#064E3B] text-[#84CC16] border border-[#0D6E53] hover:bg-[#0D6E53] transition-all flex items-center gap-1.5"
+            >
+              <span>🧾 Comprobante &amp; QR</span>
+            </button>
             <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wide">
               {orden.estado}
             </span>
@@ -489,6 +498,28 @@ export default function PedidoPage() {
       <footer className="border-t border-slate-900 py-4 text-center text-xs text-slate-500">
         OcumareHub &copy; {new Date().getFullYear()} — Plataforma Segura de Comercio por Encargo.
       </footer>
+      {/* Modal Comprobante Digital con QR y Talón */}
+      {mostrarComprobante && (
+        <DigitalReceiptModal
+          orden={{
+            numero: orden.numero,
+            cliente_nombre: orden.cliente_nombre,
+            cliente_telefono: orden.cliente_telefono,
+            cliente_cedula: (orden as any).cliente_cedula,
+            metodo_entrega: orden.metodo_entrega,
+            direccion_entrega: orden.direccion_entrega,
+            total_usd: parseFloat(String(orden.total_usd || 0)),
+            monto_inicial_usd: parseFloat(String(orden.monto_inicial_usd || 0)),
+            saldo_restante_usd: parseFloat(String((orden as any).saldo_restante_usd || (orden as any).saldo_pendiente_usd || (parseFloat(String(orden.total_usd || 0)) - parseFloat(String(orden.monto_inicial_usd || 0))))),
+            estado: orden.estado,
+            created_at: orden.created_at,
+            referencia_pago: orden.referencia_pago,
+            guia_seguimiento: (orden as any).guia_seguimiento,
+          }}
+          tasaBcv={parseFloat(String(orden.tasa_cambio_bcv || 36.5))}
+          onClose={() => setMostrarComprobante(false)}
+        />
+      )}
     </div>
   );
 }

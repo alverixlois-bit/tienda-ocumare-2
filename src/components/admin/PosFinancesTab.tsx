@@ -468,7 +468,59 @@ export function PosFinancesTab({ tasaBcv, showToast }: PosFinancesTabProps) {
           Historial de Movimientos de Caja POS
         </h3>
 
-        <div className="overflow-x-auto">
+        {/* Vista Móvil: Lista de Movimientos (< md) */}
+        <div className="md:hidden space-y-2.5">
+          {movimientos.length === 0 ? (
+            <div className="py-8 text-center text-slate-500 text-xs">
+              No hay movimientos registrados en la caja.
+            </div>
+          ) : (
+            movimientos.map((m) => (
+              <div
+                key={`mov-card-${m.id}`}
+                className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2 text-xs"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="font-semibold text-white block truncate">
+                      {m.concepto}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono block">
+                      {new Date(m.created_at).toLocaleString("es-VE")} &bull; {m.metodo_pago}
+                    </span>
+                  </div>
+
+                  <span
+                    className={`font-mono font-bold text-sm shrink-0 ${
+                      m.tipo === "ingreso" ? "text-emerald-400" : "text-red-400"
+                    }`}
+                  >
+                    {m.tipo === "ingreso" ? "+" : "-"}{formatoUSD(m.monto_usd)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] pt-1 border-t border-slate-800/60">
+                  <span
+                    className={`px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                      m.tipo === "ingreso"
+                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                        : "bg-red-500/10 text-red-400 border border-red-500/20"
+                    }`}
+                  >
+                    {m.tipo} &bull; {m.categoria}
+                  </span>
+
+                  <span className="text-slate-400 font-mono">
+                    {formatoVES(m.monto_ves)}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Vista Desktop: Tabla (>= md) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-slate-800 text-slate-400 text-[11px] uppercase tracking-wider font-semibold">
@@ -535,8 +587,8 @@ export function PosFinancesTab({ tasaBcv, showToast }: PosFinancesTabProps) {
 
       {/* Modal Recibo de Venta Oficial (Imprimible / PDF) */}
       {modalReciboOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="relative w-full max-w-md bg-white text-slate-900 rounded-3xl p-6 shadow-2xl space-y-4 font-mono text-xs">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full sm:max-w-md bg-white text-slate-900 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 font-mono text-xs max-h-[90dvh] overflow-y-auto">
             
             <div className="flex items-center justify-between border-b pb-3 not-printable">
               <span className="font-display font-extrabold text-sm text-[#064E3B]">

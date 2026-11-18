@@ -19,10 +19,12 @@ import {
   Flame,
   X,
   FileSpreadsheet,
+  Sparkles,
 } from "lucide-react";
 import { ProductoRow, CategoriaRow } from "@/types/database.types";
 import { createClient } from "@/lib/supabase/client";
 import { ProductModal } from "./ProductModal";
+import { SocialStoryModal } from "./SocialStoryModal";
 import { convertirUsdaVes, formatoUSD, formatoVES, sanitizarNumero } from "@/utils/currency";
 import { obtenerCategorias } from "@/actions/categories";
 import {
@@ -47,6 +49,7 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductoRow | null>(null);
+  const [storyProduct, setStoryProduct] = useState<ProductoRow | null>(null);
 
   // Importador Masivo CSV/Excel
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -595,6 +598,14 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
                     </div>
 
                     <button
+                      onClick={() => setStoryProduct(prod)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-[#84CC16] hover:bg-slate-800 transition-colors"
+                      title="Generar Historia 9:16 (IG / WhatsApp)"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                    </button>
+
+                    <button
                       onClick={() => handleOpenEdit(prod)}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-400 hover:bg-slate-800 transition-colors"
                       title="Editar producto"
@@ -629,10 +640,10 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
 
       {/* Modal Importador Masivo CSV/Excel */}
       {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
           <form
             onSubmit={handleEjecutarImportacion}
-            className="relative w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4"
+            className="relative w-full sm:max-w-xl bg-slate-900 border-t sm:border border-slate-800 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -725,6 +736,14 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
             </div>
           </form>
         </div>
+      )}
+      {/* Modal Historia para Redes Sociales */}
+      {storyProduct && (
+        <SocialStoryModal
+          producto={storyProduct}
+          tasaBcv={tasaBcv}
+          onClose={() => setStoryProduct(null)}
+        />
       )}
     </div>
   );

@@ -41,20 +41,20 @@ export function ProductDetailModal({
     : [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-sm animate-in fade-in">
-      <div className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-slate-900/70 backdrop-blur-sm animate-in fade-in">
+      <div className="relative w-full sm:max-w-3xl bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border-t sm:border border-slate-200 overflow-hidden flex flex-col max-h-[92dvh] animate-in zoom-in-95 duration-200">
         
         {/* Header Modal */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-stone-50">
+        <div className="px-5 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 flex items-center justify-between bg-stone-50 shrink-0">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#84CC16]" />
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+            <span className="text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">
               {producto.categoria_id ? "Encargo Exclusivo" : "Boutique Import"}
             </span>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 transition-colors"
+            className="w-9 h-9 min-h-[44px] min-w-[44px] rounded-full bg-white hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
