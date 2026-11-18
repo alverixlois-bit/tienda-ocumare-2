@@ -18,6 +18,32 @@ export function convertirUsdaVes(montoUsd: string | number, tasaBcv: string | nu
 }
 
 /**
+ * Calcula el 50% de abono con precisión Decimal.js
+ */
+export function calcularAbono50(montoUsd: string | number): string {
+  try {
+    const usd = new Decimal(montoUsd || 0);
+    if (usd.isZero()) return "0.00";
+    return usd.dividedBy(2).toFixed(2);
+  } catch {
+    return "0.00";
+  }
+}
+
+/**
+ * Calcula el saldo restante restando el abono al total con Decimal.js
+ */
+export function calcularSaldoRestante(totalUsd: string | number, abonoUsd: string | number): string {
+  try {
+    const total = new Decimal(totalUsd || 0);
+    const abono = new Decimal(abonoUsd || 0);
+    return Decimal.max(0, total.minus(abono)).toFixed(2);
+  } catch {
+    return "0.00";
+  }
+}
+
+/**
  * Formatea un monto en dólares para presentación visual ($ 12.50)
  */
 export function formatoUSD(monto: string | number): string {
@@ -34,7 +60,8 @@ export function formatoUSD(monto: string | number): string {
  */
 export function formatoVES(monto: string | number): string {
   try {
-    const num = Number(monto || 0);
+    const val = new Decimal(monto || 0);
+    const num = val.toNumber();
     return `Bs. ${num.toLocaleString("es-VE", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,

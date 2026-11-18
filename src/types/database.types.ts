@@ -31,6 +31,21 @@ export type TiendaRow = {
   tasa_bcv?: number | string | null;
   modo_ofertas?: boolean | null;
   permite_abono?: boolean | null;
+  pin_entrega?: string | null;
+  tipo_entrega?: string | null;
+  punto_entrega_id?: string | null;
+  punto_entrega_nombre?: string | null;
+  fecha_entrega?: string | null;
+  hora_entrega?: string | null;
+  metodo_pago_sitio?: string | null;
+  denominacion_billete?: string | null;
+  tipo_pago?: string | null;
+  monto_abonado_usd?: number | string | null;
+  monto_restante_usd?: number | string | null;
+  guia_seguimiento?: string | null;
+  empresa_envio?: string | null;
+  agencia_envio?: string | null;
+  cliente_cedula?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -77,6 +92,21 @@ export type CategoriaRow = {
   descripcion: string | null;
   activo: boolean;
   orden: number;
+  pin_entrega?: string | null;
+  tipo_entrega?: string | null;
+  punto_entrega_id?: string | null;
+  punto_entrega_nombre?: string | null;
+  fecha_entrega?: string | null;
+  hora_entrega?: string | null;
+  metodo_pago_sitio?: string | null;
+  denominacion_billete?: string | null;
+  tipo_pago?: string | null;
+  monto_abonado_usd?: number | string | null;
+  monto_restante_usd?: number | string | null;
+  guia_seguimiento?: string | null;
+  empresa_envio?: string | null;
+  agencia_envio?: string | null;
+  cliente_cedula?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -131,6 +161,21 @@ export type ProductoRow = {
   video_url?: string | null;
   en_oferta?: boolean | null;
   precio_oferta?: string | null;
+  pin_entrega?: string | null;
+  tipo_entrega?: string | null;
+  punto_entrega_id?: string | null;
+  punto_entrega_nombre?: string | null;
+  fecha_entrega?: string | null;
+  hora_entrega?: string | null;
+  metodo_pago_sitio?: string | null;
+  denominacion_billete?: string | null;
+  tipo_pago?: string | null;
+  monto_abonado_usd?: number | string | null;
+  monto_restante_usd?: number | string | null;
+  guia_seguimiento?: string | null;
+  empresa_envio?: string | null;
+  agencia_envio?: string | null;
+  cliente_cedula?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -194,6 +239,21 @@ export type GrupoOpcionesRow = {
   requerido: boolean;
   permite_multiple: boolean;
   orden: number;
+  pin_entrega?: string | null;
+  tipo_entrega?: string | null;
+  punto_entrega_id?: string | null;
+  punto_entrega_nombre?: string | null;
+  fecha_entrega?: string | null;
+  hora_entrega?: string | null;
+  metodo_pago_sitio?: string | null;
+  denominacion_billete?: string | null;
+  tipo_pago?: string | null;
+  monto_abonado_usd?: number | string | null;
+  monto_restante_usd?: number | string | null;
+  guia_seguimiento?: string | null;
+  empresa_envio?: string | null;
+  agencia_envio?: string | null;
+  cliente_cedula?: string | null;
   created_at: string;
 };
 
@@ -231,6 +291,21 @@ export type OpcionVarianteRow = {
   precio_base: string;
   activo: boolean;
   orden: number;
+  pin_entrega?: string | null;
+  tipo_entrega?: string | null;
+  punto_entrega_id?: string | null;
+  punto_entrega_nombre?: string | null;
+  fecha_entrega?: string | null;
+  hora_entrega?: string | null;
+  metodo_pago_sitio?: string | null;
+  denominacion_billete?: string | null;
+  tipo_pago?: string | null;
+  monto_abonado_usd?: number | string | null;
+  monto_restante_usd?: number | string | null;
+  guia_seguimiento?: string | null;
+  empresa_envio?: string | null;
+  agencia_envio?: string | null;
+  cliente_cedula?: string | null;
   created_at: string;
 };
 
@@ -298,6 +373,21 @@ export type OrdenRow = {
   comprobante_url: string | null;
   referencia_pago?: string | null;
   notas: string | null;
+  pin_entrega?: string | null;
+  tipo_entrega?: string | null;
+  punto_entrega_id?: string | null;
+  punto_entrega_nombre?: string | null;
+  fecha_entrega?: string | null;
+  hora_entrega?: string | null;
+  metodo_pago_sitio?: string | null;
+  denominacion_billete?: string | null;
+  tipo_pago?: string | null;
+  monto_abonado_usd?: number | string | null;
+  monto_restante_usd?: number | string | null;
+  guia_seguimiento?: string | null;
+  empresa_envio?: string | null;
+  agencia_envio?: string | null;
+  cliente_cedula?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -387,6 +477,21 @@ export type OrdenItemRow = {
   subtotal_usd: string;
   subtotal_ves_exacto: string;
   subtotal_ves: string;
+  pin_entrega?: string | null;
+  tipo_entrega?: string | null;
+  punto_entrega_id?: string | null;
+  punto_entrega_nombre?: string | null;
+  fecha_entrega?: string | null;
+  hora_entrega?: string | null;
+  metodo_pago_sitio?: string | null;
+  denominacion_billete?: string | null;
+  tipo_pago?: string | null;
+  monto_abonado_usd?: number | string | null;
+  monto_restante_usd?: number | string | null;
+  guia_seguimiento?: string | null;
+  empresa_envio?: string | null;
+  agencia_envio?: string | null;
+  cliente_cedula?: string | null;
   created_at: string;
 };
 
@@ -441,6 +546,21 @@ export type MensajeChatRow = {
   remitente_rol: RemitenteRol;
   mensaje: string;
   leido: boolean;
+  pin_entrega?: string | null;
+  tipo_entrega?: string | null;
+  punto_entrega_id?: string | null;
+  punto_entrega_nombre?: string | null;
+  fecha_entrega?: string | null;
+  hora_entrega?: string | null;
+  metodo_pago_sitio?: string | null;
+  denominacion_billete?: string | null;
+  tipo_pago?: string | null;
+  monto_abonado_usd?: number | string | null;
+  monto_restante_usd?: number | string | null;
+  guia_seguimiento?: string | null;
+  empresa_envio?: string | null;
+  agencia_envio?: string | null;
+  cliente_cedula?: string | null;
   created_at: string;
 };
 
@@ -482,6 +602,21 @@ export type AuditoriaOrdenRow = {
   estado_nuevo: EstadoOrden;
   cambios: Json;
   actor_id: string | null;
+  pin_entrega?: string | null;
+  tipo_entrega?: string | null;
+  punto_entrega_id?: string | null;
+  punto_entrega_nombre?: string | null;
+  fecha_entrega?: string | null;
+  hora_entrega?: string | null;
+  metodo_pago_sitio?: string | null;
+  denominacion_billete?: string | null;
+  tipo_pago?: string | null;
+  monto_abonado_usd?: number | string | null;
+  monto_restante_usd?: number | string | null;
+  guia_seguimiento?: string | null;
+  empresa_envio?: string | null;
+  agencia_envio?: string | null;
+  cliente_cedula?: string | null;
   created_at: string;
 };
 
@@ -724,6 +859,51 @@ export type GenericRelationship = {
   referencedColumns: string[];
 };
 
+// ---------------------------------------------------------------------------
+// puntos_entrega
+// ---------------------------------------------------------------------------
+export type PuntoEntregaRow = {
+  id: string;
+  tienda_id?: string | null;
+  nombre: string;
+  direccion?: string | null;
+  referencia?: string | null;
+  horario?: string | null;
+  activo: boolean;
+  created_at: string;
+};
+
+// ---------------------------------------------------------------------------
+// admin_perfiles
+// ---------------------------------------------------------------------------
+export type AdminPerfilRow = {
+  id: string;
+  user_id?: string | null;
+  alias: string;
+  nombre?: string | null;
+  rol: "superadmin" | "operador" | "despacho" | string;
+  en_linea: boolean;
+  avatar_url?: string | null;
+  created_at: string;
+};
+
+// ---------------------------------------------------------------------------
+// finanzas_movimientos
+// ---------------------------------------------------------------------------
+export type FinanzasMovimientoRow = {
+  id: string;
+  tipo: "ingreso" | "egreso";
+  monto_usd: number | string;
+  monto_ves: number | string;
+  metodo_pago?: string | null;
+  concepto: string;
+  categoria?: string | null;
+  orden_id?: string | null;
+  comprobante_url?: string | null;
+  creado_por?: string | null;
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -797,6 +977,24 @@ export type Database = {
         Row: AuditoriaOrdenRow;
         Insert: AuditoriaOrdenInsert;
         Update: AuditoriaOrdenUpdate;
+        Relationships: GenericRelationship[];
+      };
+      puntos_entrega: {
+        Row: PuntoEntregaRow;
+        Insert: Partial<PuntoEntregaRow>;
+        Update: Partial<PuntoEntregaRow>;
+        Relationships: GenericRelationship[];
+      };
+      admin_perfiles: {
+        Row: AdminPerfilRow;
+        Insert: Partial<AdminPerfilRow>;
+        Update: Partial<AdminPerfilRow>;
+        Relationships: GenericRelationship[];
+      };
+      finanzas_movimientos: {
+        Row: FinanzasMovimientoRow;
+        Insert: Partial<FinanzasMovimientoRow>;
+        Update: Partial<FinanzasMovimientoRow>;
         Relationships: GenericRelationship[];
       };
     };

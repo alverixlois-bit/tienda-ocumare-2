@@ -9,6 +9,11 @@ export interface GuardarProductoPayload {
   id?: string;
   nombre?: string;
   titulo?: string;
+  sku?: string;
+  prioridad?: number;
+  tag_promo?: string;
+  caracteristicas?: string;
+  modo_uso?: string;
   descripcion?: string | null;
   precio_usd?: string | number;
   precio_base?: string | number;
@@ -67,6 +72,11 @@ function detectarColumnaInexistente(mensajeError: string): string | null {
     "permite_decimales",
     "tienda_id",
     "updated_at",
+    "prioridad",
+    "sku",
+    "tag_promo",
+    "caracteristicas",
+    "modo_uso",
   ];
 
   for (const campo of camposConocidos) {
@@ -177,6 +187,12 @@ export async function guardarProducto(payload: GuardarProductoPayload): Promise<
       nombre: nombreFinal,
       titulo: nombreFinal,
       descripcion,
+      // Atributos Boutique Stitch
+      sku: payload.sku?.trim() || null,
+      prioridad: sanitizarNumero(payload.prioridad, 1),
+      tag_promo: payload.tag_promo?.trim() || null,
+      caracteristicas: payload.caracteristicas?.trim() || null,
+      modo_uso: payload.modo_uso?.trim() || null,
       // Precios
       precio_usd: precioNumerico,
       precio_base: precioNumerico.toFixed(2),
@@ -366,6 +382,128 @@ export async function eliminarProducto(
     return { success: true };
   } catch (err: unknown) {
     return { success: false, error: extraerMensajeError(err) };
+  }
+}
+
+/**
+ * Actualiza la prioridad visual de un producto para el orden en el catálogo.
+ */
+export async function actualizarPrioridadProducto(
+  id: string,
+  prioridad: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("productos")
+      .update({ prioridad, updated_at: new Date().toISOString() } as any)
+      .eq("id", id);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    revalidarRutas();
+    return { success: true };
+  } catch (err: unknown) {
+    return { success: false, error: extraerMensajeError(err) };
+  }
+}
+
+/**
+ * Importación masiva de productos desde CSV/Excel con resolución interactiva de duplicados:
+ * - "sumar_stock": suma el nuevo stock al stock existente
+ * - "omitir": mantiene el registro existente sin alterar
+ */
+export async function importarProductosMasivoAction(
+  productos: Array<{
+    nombre: string;
+    sku?: string;
+    precio_usd: number;
+    stock: number;
+    categoria_id?: string | null;
+    tag_promo?: string;
+    descripcion?: string;
+    caracteristicas?: string;
+    modo_uso?: string;
+    imagen_url?: string;
+  }>,
+  modoDuplicado: "sumar_stock" | "omitir" = "sumar_stock"
+): Promise<{ success: boolean; creados: number; actualizados: number; omitidos: number; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const tiendaId =
+      process.env.NEXT_PUBLIC_TIENDA_ID || "00000000-0000-0000-0000-000000000001";
+
+    let creados = 0;
+    let actualizados = 0;
+    let omitidos = 0;
+
+    // Obtener productos existentes para cotejo por SKU o nombre
+    const { data: existentes } = await supabase
+      .from("productos")
+      .select("id, nombre, titulo, sku, stock");
+
+    const listaExistente = Array.isArray(existentes) ? existentes : [];
+
+    for (const item of productos) {
+      if (!item.nombre || !item.nombre.trim()) continue;
+      const nombreNorm = item.nombre.trim().toLowerCase();
+      const skuNorm = (item.sku || "").trim().toLowerCase();
+
+      // Buscar duplicado
+      const coincidencia = listaExistente.find((p: any) => {
+        const pSku = (p.sku || "").trim().toLowerCase();
+        const pNom = (p.nombre || p.titulo || "").trim().toLowerCase();
+        return (skuNorm && pSku === skuNorm) || pNom === nombreNorm;
+      });
+
+      if (coincidencia) {
+        if (modoDuplicado === "omitir") {
+          omitidos++;
+          continue;
+        } else {
+          // Sumar stock
+          const stockActual = sanitizarNumero((coincidencia as any).stock, 0);
+          const nuevoStock = stockActual + Math.max(0, item.stock || 0);
+
+          await supabase
+            .from("productos")
+            .update({ stock: nuevoStock, updated_at: new Date().toISOString() } as any)
+            .eq("id", (coincidencia as any).id);
+
+          actualizados++;
+        }
+      } else {
+        // Crear nuevo producto
+        await guardarProducto({
+          nombre: item.nombre,
+          sku: item.sku,
+          precio_usd: item.precio_usd,
+          stock: item.stock,
+          categoria_id: item.categoria_id,
+          tag_promo: item.tag_promo,
+          descripcion: item.descripcion,
+          caracteristicas: item.caracteristicas,
+          modo_uso: item.modo_uso,
+          imagen_url: item.imagen_url,
+          tienda_id: tiendaId,
+          activo: true,
+        });
+        creados++;
+      }
+    }
+
+    await registrarAccionAuditoria({
+      accion: "importacion_masiva_productos",
+      tabla: "productos",
+      detalles: { total: productos.length, creados, actualizados, omitidos, modoDuplicado },
+    });
+
+    revalidarRutas();
+    return { success: true, creados, actualizados, omitidos };
+  } catch (err: unknown) {
+    return { success: false, creados: 0, actualizados: 0, omitidos: 0, error: extraerMensajeError(err) };
   }
 }
 

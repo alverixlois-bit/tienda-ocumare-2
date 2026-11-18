@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { ProductoRow } from "@/types/database.types";
-import { convertirUsdaVes } from "@/utils/currency";
+import { convertirUsdaVes, calcularAbono50, calcularSaldoRestante } from "@/utils/currency";
 import Decimal from "decimal.js";
 
 export interface CartItem {
@@ -10,10 +10,14 @@ export interface CartItem {
   cantidad: number;
 }
 
+export type TipoPagoCart = "abono_50" | "total_100";
+
 interface CartContextType {
   items: CartItem[];
   tasaBcv: number;
   setTasaBcv: (tasa: number) => void;
+  tipoPago: TipoPagoCart;
+  setTipoPago: (tipo: TipoPagoCart) => void;
   totalItems: number;
   subtotalUSD: number;
   subtotalVES: number;
@@ -21,6 +25,8 @@ interface CartContextType {
   abonoVES: number;
   saldoPendienteUSD: number;
   saldoPendienteVES: number;
+  montoPagarUSD: number;
+  montoPagarVES: number;
   agregarProducto: (producto: ProductoRow, cantidad?: number) => void;
   removerProducto: (productoId: string) => void;
   actualizarCantidad: (productoId: string, cantidad: number) => void;
@@ -35,7 +41,8 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
-  const [tasaBcv, setTasaBcv] = useState<number>(52.5);
+  const [tasaBcv, setTasaBcv] = useState<number>(64.5);
+  const [tipoPago, setTipoPago] = useState<TipoPagoCart>("abono_50");
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -105,14 +112,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems([]);
   }
 
-  // Cálculos financieros precisos
+  // Cálculos financieros precisos con Decimal.js
   const totalItems = items.reduce((acc, item) => acc + item.cantidad, 0);
 
   let subtotalUsdDec = new Decimal(0);
   items.forEach((item) => {
     const precio = item.producto.en_oferta && item.producto.precio_oferta
       ? item.producto.precio_oferta
-      : item.producto.precio_base;
+      : (item.producto.precio_usd ?? item.producto.precio_base);
     const precioDec = new Decimal(precio || 0);
     subtotalUsdDec = subtotalUsdDec.plus(precioDec.times(item.cantidad));
   });
@@ -127,12 +134,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const saldoPendienteUSD = subtotalUsdDec.minus(abonoUSD).toNumber();
   const saldoPendienteVES = Number(convertirUsdaVes(saldoPendienteUSD, tasaBcv));
 
+  const montoPagarUSD = tipoPago === "total_100" ? subtotalUSD : abonoUSD;
+  const montoPagarVES = tipoPago === "total_100" ? subtotalVES : abonoVES;
+
   return (
     <CartContext.Provider
       value={{
         items,
         tasaBcv,
         setTasaBcv,
+        tipoPago,
+        setTipoPago,
         totalItems,
         subtotalUSD,
         subtotalVES,
@@ -140,6 +152,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         abonoVES,
         saldoPendienteUSD,
         saldoPendienteVES,
+        montoPagarUSD,
+        montoPagarVES,
         agregarProducto,
         removerProducto,
         actualizarCantidad,

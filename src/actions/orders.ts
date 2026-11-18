@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { OrdenInsert, OrdenItemInsert } from "@/types/database.types";
+import { OrdenItemInsert } from "@/types/database.types";
 import { registrarAccionAuditoria } from "@/lib/audit";
 import { formatoUSD, formatoVES } from "@/utils/currency";
 
@@ -31,12 +31,23 @@ export interface CrearPedidoParams {
   saldoPendienteVES: number;
   tasaBcv: number;
   items: ItemPedidoInput[];
+  // Campos Stitch Encargos Boutique
+  tipoEntrega?: "nacional" | "personal";
+  puntoEntregaId?: string | null;
+  puntoEntregaNombre?: string | null;
+  fechaEntrega?: string | null;
+  horaEntrega?: string | null;
+  metodoPagoSitio?: string | null;
+  denominacionBillete?: string | null;
+  tipoPago?: "abono_50" | "total_100";
+  pinEntrega?: string | null;
 }
 
 export interface CrearPedidoResponse {
   success: boolean;
   pedidoId?: string;
   numeroOrden?: string;
+  pinEntrega?: string;
   error?: string;
 }
 
@@ -55,12 +66,17 @@ export async function crearPedidoAction(
 
     const randomDigits = Math.floor(10000000 + Math.random() * 90000000);
     const numeroOrden = `PED-${randomDigits}`;
+    const pinGenerado =
+      params.pinEntrega || String(Math.floor(1000 + Math.random() * 9000));
     const nowIso = new Date().toISOString();
 
     const estadoFinal =
       params.comprobanteUrl || (params.referenciaPago && params.referenciaPago.trim())
         ? "abono_verificado"
         : "pendiente";
+
+    const tipoPagoFinal = params.tipoPago || "abono_50";
+    const tipoEntregaFinal = params.tipoEntrega || (params.metodoEntrega === "personal" ? "personal" : "nacional");
 
     // 1. Inserción en tabla 'ordenes'
     const ordenPayload: Record<string, any> = {
@@ -70,9 +86,10 @@ export async function crearPedidoAction(
       cliente_telefono: params.telefono.trim(),
       cliente_email: null,
       cliente_id: null,
+      cliente_cedula: params.cedula.trim(),
       direccion_entrega: params.direccion.trim(),
       metodo_entrega: params.metodoEntrega,
-      modalidad_pago: "abono",
+      modalidad_pago: tipoPagoFinal === "total_100" ? "completo" : "abono",
       estado: estadoFinal,
       moneda_base: "USD",
       tasa_cambio_bcv: params.tasaBcv.toFixed(4),
@@ -89,7 +106,21 @@ export async function crearPedidoAction(
       referencia_pago: params.referenciaPago?.trim() || null,
       notas: `C.I/RIF: ${params.cedula.trim()} | Ref: ${
         params.referenciaPago?.trim() || "S/R"
-      } | Notas: ${params.notas?.trim() || "Ninguna"}`,
+      } | Notas: ${params.notas?.trim() || "Ninguna"}${
+        params.denominacionBillete ? ` | Vuelto para: ${params.denominacionBillete}` : ""
+      }`,
+      // Campos de despacho y seguridad Stitch
+      pin_entrega: pinGenerado,
+      tipo_entrega: tipoEntregaFinal,
+      punto_entrega_id: params.puntoEntregaId || null,
+      punto_entrega_nombre: params.puntoEntregaNombre || null,
+      fecha_entrega: params.fechaEntrega || null,
+      hora_entrega: params.horaEntrega || null,
+      metodo_pago_sitio: params.metodoPagoSitio || null,
+      denominacion_billete: params.denominacionBillete || null,
+      tipo_pago: tipoPagoFinal,
+      monto_abonado_usd: params.abonoUSD,
+      monto_restante_usd: params.saldoPendienteUSD,
       created_at: nowIso,
       updated_at: nowIso,
     };
@@ -143,11 +174,25 @@ export async function crearPedidoAction(
       cliente_nombre: params.nombre.trim(),
       cliente_cedula: params.cedula.trim(),
       cliente_telefono: params.telefono.trim(),
-      agencia_envio: `${params.metodoEntrega.toUpperCase()} - ${params.direccion.trim()}`,
+      agencia_envio:
+        tipoEntregaFinal === "personal"
+          ? `ENTREGA PERSONAL: ${params.puntoEntregaNombre || "Punto seguro"} (${params.fechaEntrega || ""} ${params.horaEntrega || ""})`
+          : `${params.metodoEntrega.toUpperCase()} - ${params.direccion.trim()}`,
       estado_pago: estadoFinal === "abono_verificado" ? "abono_verificado" : "pendiente_abono",
       referencia_pago: params.referenciaPago?.trim() || null,
       comprobante_url: params.comprobanteUrl || null,
       numero_orden: numeroOrden,
+      pin_entrega: pinGenerado,
+      tipo_entrega: tipoEntregaFinal,
+      punto_entrega_id: params.puntoEntregaId || null,
+      punto_entrega_nombre: params.puntoEntregaNombre || null,
+      fecha_entrega: params.fechaEntrega || null,
+      hora_entrega: params.horaEntrega || null,
+      metodo_pago_sitio: params.metodoPagoSitio || null,
+      denominacion_billete: params.denominacionBillete || null,
+      tipo_pago: tipoPagoFinal,
+      monto_abonado_usd: params.abonoUSD,
+      monto_restante_usd: params.saldoPendienteUSD,
     };
 
     let pedidoCreadoId = "";
@@ -160,8 +205,10 @@ export async function crearPedidoAction(
     if (pedidoData) {
       pedidoCreadoId = String(pedidoData.id);
     } else if (pedidoError) {
-      // Reintentar sin 'numero_orden' si la columna aún no existe
+      // Reintentar sin columnas opcionales si la base es antigua
       delete pedidoPayload.numero_orden;
+      delete pedidoPayload.pin_entrega;
+      delete pedidoPayload.tipo_entrega;
       const retryPed = await supabase
         .from("pedidos")
         .insert([pedidoPayload as any])
@@ -181,18 +228,18 @@ export async function crearPedidoAction(
         ? ` y referencia #${params.referenciaPago.trim()}`
         : "";
       const msgCapture = params.comprobanteUrl ? " Comprobante de pago recibido." : "";
+      const msgPin = ` Tu PIN secreto de entrega es: 🔑 ${pinGenerado}.`;
 
       await supabase.from("mensajes_chat").insert([
         {
           tienda_id: tiendaId,
           orden_id: ordenCreadaId || pedidoFinalId,
           pedido_id: pedidoFinalId,
-          remitente: "sistema",
-          cliente_id: null,
-          remitente_rol: "sistema",
-          mensaje: `👋 ¡Hola ${params.nombre.trim()}! Tu encargo #${numeroOrden} fue registrado exitosamente con abono inicial del 50% (${formatoUSD(
-            params.abonoUSD
-          )} / ${formatoVES(params.abonoVES)})${msgRef}.${msgCapture} El vendedor verificará los datos en breve.`,
+          remitente: "admin",
+          admin_alias: "Asesor de Ventas",
+          mensaje: `👋 ¡Hola ${params.nombre.trim()}! Tu encargo #${numeroOrden} fue registrado exitosamente con ${
+            tipoPagoFinal === "total_100" ? "pago completo (100%)" : "abono inicial (50%)"
+          } (${formatoUSD(params.abonoUSD)} / ${formatoVES(params.abonoVES)})${msgRef}.${msgCapture}${msgPin} El vendedor verificará los datos en breve.`,
           leido: false,
           created_at: nowIso,
         } as any,
@@ -201,7 +248,29 @@ export async function crearPedidoAction(
       console.warn("Aviso insertando mensaje chat:", errChat);
     }
 
-    // 4. Registrar en auditoría
+    // 4. Si hubo pago registrado, crear movimiento financiero de ingreso
+    if (params.abonoUSD > 0 && (params.referenciaPago || params.comprobanteUrl)) {
+      try {
+        await supabase.from("finanzas_movimientos").insert([
+          {
+            tipo: "ingreso",
+            monto_usd: params.abonoUSD,
+            monto_ves: params.abonoVES,
+            metodo_pago: params.metodoPagoSitio || "transferencia_o_movil",
+            concepto: `Abono de encargo #${numeroOrden} - ${params.nombre.trim()}`,
+            categoria: "abono",
+            orden_id: numeroOrden,
+            comprobante_url: params.comprobanteUrl || null,
+            creado_por: "sistema_checkout",
+            created_at: nowIso,
+          } as any,
+        ]);
+      } catch (errFin) {
+        console.warn("Aviso registrando finanzas:", errFin);
+      }
+    }
+
+    // 5. Registrar en auditoría
     await registrarAccionAuditoria({
       email: "cliente@ocumarehub.com",
       accion: "pedido_creado",
@@ -209,18 +278,18 @@ export async function crearPedidoAction(
       registroId: pedidoFinalId,
       detalles: {
         numeroOrden,
+        pinEntrega: pinGenerado,
         cliente: params.nombre.trim(),
         cedula: params.cedula.trim(),
         totalUsd: params.subtotalUSD,
         abonoUsd: params.abonoUSD,
+        tipoEntrega: tipoEntregaFinal,
         referencia: params.referenciaPago?.trim() || null,
         comprobante: params.comprobanteUrl || null,
       },
     });
 
-    revalidatePath("/admin");
-    revalidatePath("/catalogo");
-    revalidatePath("/pedido");
+    revalidarRutas();
     revalidatePath(`/pedido/${pedidoFinalId}`);
     revalidatePath(`/pedido/${numeroOrden}`);
 
@@ -228,6 +297,7 @@ export async function crearPedidoAction(
       success: true,
       pedidoId: pedidoFinalId,
       numeroOrden,
+      pinEntrega: pinGenerado,
     };
   } catch (err: unknown) {
     console.error("Excepción en crearPedidoAction:", err);
@@ -236,4 +306,384 @@ export async function crearPedidoAction(
       error: err instanceof Error ? err.message : "Error al procesar el encargo.",
     };
   }
+}
+
+/**
+ * Actualiza el estado de una orden (por ejemplo 'pagada', 'en_preparacion', 'despachado', 'entregado', 'cancelada')
+ */
+export async function actualizarEstadoOrdenAction(
+  ordenId: string,
+  nuevoEstado: string,
+  adminAlias: string = "@admin"
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const nowIso = new Date().toISOString();
+
+    // Actualizar en 'ordenes'
+    const { error: ordErr } = await supabase
+      .from("ordenes")
+      .update({ estado: nuevoEstado, updated_at: nowIso } as any)
+      .or(`id.eq.${ordenId},numero.eq.${ordenId}`);
+
+    // Actualizar en 'pedidos'
+    await supabase
+      .from("pedidos")
+      .update({ estado_pago: nuevoEstado } as any)
+      .or(`id.eq.${ordenId},numero_orden.eq.${ordenId}`);
+
+    // Mensaje automático en chat
+    const estadoLabels: Record<string, string> = {
+      abono_verificado: "✅ Pago/Abono verificado con éxito por el vendedor.",
+      pagada: "✅ Pago total verificado con éxito.",
+      en_preparacion: "📦 Tu encargo está siendo preparado y empaquetado para despacho.",
+      despachado: "🚚 Tu encargo ha sido despachado / está en ruta para entrega.",
+      entregado: "🎉 ¡Tu encargo ha sido entregado exitosamente! Gracias por tu compra.",
+      cancelada: "⚠️ Tu encargo ha sido cancelado.",
+    };
+
+    if (estadoLabels[nuevoEstado]) {
+      try {
+        await supabase.from("mensajes_chat").insert([
+          {
+            orden_id: ordenId,
+            remitente: "admin",
+            admin_alias: "Asesor de Ventas",
+            mensaje: estadoLabels[nuevoEstado],
+            leido: false,
+            created_at: nowIso,
+          } as any,
+        ]);
+      } catch (err) {
+        console.warn("Aviso insertando chat de estado:", err);
+      }
+    }
+
+    await registrarAccionAuditoria({
+      accion: "actualizar_estado_orden",
+      tabla: "ordenes",
+      registroId: ordenId,
+      detalles: { nuevoEstado, adminAlias },
+    });
+
+    revalidarRutas();
+    return { success: true };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : "Error al actualizar estado" };
+  }
+}
+
+/**
+ * Asigna número de guía de envío y empresa (Zoom, Tealca, MRW)
+ */
+export async function asignarGuiaEnvioAction(
+  ordenId: string,
+  empresa: string,
+  guia: string,
+  adminAlias: string = "@despacho"
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const nowIso = new Date().toISOString();
+
+    await supabase
+      .from("ordenes")
+      .update({
+        empresa_envio: empresa.trim(),
+        guia_seguimiento: guia.trim(),
+        estado: "despachado",
+        updated_at: nowIso,
+      } as any)
+      .or(`id.eq.${ordenId},numero.eq.${ordenId}`);
+
+    await supabase
+      .from("pedidos")
+      .update({
+        estado_pago: "despachado",
+      } as any)
+      .or(`id.eq.${ordenId},numero_orden.eq.${ordenId}`);
+
+    try {
+      await supabase.from("mensajes_chat").insert([
+        {
+          orden_id: ordenId,
+          remitente: "admin",
+          admin_alias: "Asesor de Ventas",
+          mensaje: `📦 ¡Tu pedido fue despachado por ${empresa.trim()}! Número de guía: ${guia.trim()}. Puedes rastrearlo en la página oficial del courier.`,
+          leido: false,
+          created_at: nowIso,
+        } as any,
+      ]);
+    } catch (e) {
+      console.warn("Aviso enviando mensaje guia:", e);
+    }
+
+    await registrarAccionAuditoria({
+      accion: "asignar_guia_envio",
+      tabla: "ordenes",
+      registroId: ordenId,
+      detalles: { empresa, guia, adminAlias },
+    });
+
+    revalidarRutas();
+    return { success: true };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : "Error al asignar guía" };
+  }
+}
+
+/**
+ * Valida el PIN de 4 dígitos para entrega personal y marca como entregado
+ */
+export async function validarPinEntregaAction(
+  ordenId: string,
+  pinIngresado: string,
+  adminAlias: string = "@despacho"
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+
+    // Consultar el PIN registrado
+    const { data: orden } = await supabase
+      .from("ordenes")
+      .select("id, numero, pin_entrega, cliente_nombre")
+      .or(`id.eq.${ordenId},numero.eq.${ordenId}`)
+      .maybeSingle();
+
+    const pinGuardado = (orden as any)?.pin_entrega;
+
+    if (pinGuardado && String(pinGuardado).trim() !== String(pinIngresado).trim()) {
+      return { success: false, error: `PIN incorrecto (${pinIngresado}). El cliente debe mostrar su código de 4 dígitos.` };
+    }
+
+    const nowIso = new Date().toISOString();
+
+    await supabase
+      .from("ordenes")
+      .update({ estado: "entregado", updated_at: nowIso } as any)
+      .or(`id.eq.${ordenId},numero.eq.${ordenId}`);
+
+    await supabase
+      .from("pedidos")
+      .update({ estado_pago: "entregado" } as any)
+      .or(`id.eq.${ordenId},numero_orden.eq.${ordenId}`);
+
+    try {
+      await supabase.from("mensajes_chat").insert([
+        {
+          orden_id: ordenId,
+          remitente: "admin",
+          admin_alias: "Asesor de Ventas",
+          mensaje: `🎉 ¡Entrega personal completada exitosamente mediante validación de PIN seguro! Gracias por confiar en nosotros.`,
+          leido: false,
+          created_at: nowIso,
+        } as any,
+      ]);
+    } catch (e) {
+      console.warn("Aviso enviando mensaje pin:", e);
+    }
+
+    await registrarAccionAuditoria({
+      accion: "validar_pin_entrega_completada",
+      tabla: "ordenes",
+      registroId: ordenId,
+      detalles: { pinIngresado, adminAlias, cliente: (orden as any)?.cliente_nombre },
+    });
+
+    revalidarRutas();
+    return { success: true };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : "Error al validar PIN" };
+  }
+}
+
+/**
+ * Envío de mensajes de chat (P2P o Interno)
+ */
+export async function enviarMensajeChatAction({
+  ordenId,
+  remitente,
+  mensaje,
+  archivoUrl,
+  tipoArchivo,
+  adminAlias = "Asesor de Ventas",
+}: {
+  ordenId: string;
+  remitente: "cliente" | "admin";
+  mensaje?: string;
+  archivoUrl?: string;
+  tipoArchivo?: "imagen" | "video" | "documento";
+  adminAlias?: string;
+}): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const nowIso = new Date().toISOString();
+
+    const payload = {
+      orden_id: ordenId,
+      remitente,
+      admin_alias: remitente === "admin" ? adminAlias : null,
+      mensaje: mensaje?.trim() || null,
+      archivo_url: archivoUrl || null,
+      tipo_archivo: tipoArchivo || null,
+      leido: false,
+      created_at: nowIso,
+    };
+
+    const { data, error } = await supabase
+      .from("mensajes_chat")
+      .insert([payload as any])
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    revalidatePath(`/pedido/${ordenId}`);
+    revalidatePath("/admin");
+    return { success: true, data };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : "Error al enviar mensaje" };
+  }
+}
+
+/**
+ * Registrar movimiento en Caja POS / Finanzas
+ */
+export async function registrarMovimientoCajaAction(params: {
+  tipo: "ingreso" | "egreso";
+  montoUsd: number;
+  montoVes: number;
+  metodoPago: string;
+  concepto: string;
+  categoria?: string;
+  ordenId?: string;
+  creadoPor?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const nowIso = new Date().toISOString();
+
+    const { error } = await supabase.from("finanzas_movimientos").insert([
+      {
+        tipo: params.tipo,
+        monto_usd: params.montoUsd,
+        monto_ves: params.montoVes,
+        metodo_pago: params.metodoPago,
+        concepto: params.concepto.trim(),
+        categoria: params.categoria || "general",
+        orden_id: params.ordenId || null,
+        creado_por: params.creadoPor || "@cajero",
+        created_at: nowIso,
+      } as any,
+    ]);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    await registrarAccionAuditoria({
+      accion: `registro_caja_${params.tipo}`,
+      tabla: "finanzas_movimientos",
+      detalles: params,
+    });
+
+    revalidarRutas();
+    return { success: true };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : "Error al registrar movimiento" };
+  }
+}
+
+/**
+ * Puntos de Entrega Segura CRUD
+ */
+export async function guardarPuntoEntregaAction(params: {
+  id?: string;
+  nombre: string;
+  direccion: string;
+  referencia?: string;
+  horario?: string;
+  activo?: boolean;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const payload = {
+      nombre: params.nombre.trim(),
+      direccion: params.direccion.trim(),
+      referencia: params.referencia?.trim() || null,
+      horario: params.horario?.trim() || null,
+      activo: params.activo ?? true,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (params.id) {
+      const { error } = await supabase
+        .from("puntos_entrega")
+        .update(payload as any)
+        .eq("id", params.id);
+      if (error) return { success: false, error: error.message };
+    } else {
+      const { error } = await supabase
+        .from("puntos_entrega")
+        .insert([payload as any]);
+      if (error) return { success: false, error: error.message };
+    }
+
+    await registrarAccionAuditoria({
+      accion: params.id ? "actualizar_punto_entrega" : "crear_punto_entrega",
+      tabla: "puntos_entrega",
+      detalles: params,
+    });
+
+    revalidarRutas();
+    return { success: true };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : "Error al guardar punto" };
+  }
+}
+
+export async function eliminarPuntoEntregaAction(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("puntos_entrega").delete().eq("id", id);
+    if (error) return { success: false, error: error.message };
+
+    await registrarAccionAuditoria({
+      accion: "eliminar_punto_entrega",
+      tabla: "puntos_entrega",
+      registroId: id,
+      detalles: { id },
+    });
+
+    revalidarRutas();
+    return { success: true };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : "Error al eliminar punto" };
+  }
+}
+
+export async function actualizarPresenciaAdminAction(
+  alias: string,
+  enLinea: boolean
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    await supabase
+      .from("admin_perfiles")
+      .upsert({ alias, en_linea: enLinea, updated_at: new Date().toISOString() } as any, { onConflict: "alias" });
+
+    revalidatePath("/admin");
+    return { success: true };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : "Error de presencia" };
+  }
+}
+
+function revalidarRutas() {
+  revalidatePath("/admin");
+  revalidatePath("/catalogo");
+  revalidatePath("/");
+  revalidatePath("/pedido");
 }

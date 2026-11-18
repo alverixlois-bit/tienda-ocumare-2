@@ -62,6 +62,11 @@ export function ProductModal({
 }: ProductModalProps) {
   const [saving, setSaving] = useState(false);
   const [titulo, setTitulo] = useState("");
+  const [sku, setSku] = useState("");
+  const [prioridad, setPrioridad] = useState("1");
+  const [tagPromo, setTagPromo] = useState("");
+  const [caracteristicas, setCaracteristicas] = useState("");
+  const [modoUso, setModoUso] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [categoriaId, setCategoriaId] = useState<string>("");
   const [precioBase, setPrecioBase] = useState("");
@@ -95,6 +100,11 @@ export function ProductModal({
   useEffect(() => {
     if (producto) {
       setTitulo(producto.titulo || producto.nombre || "");
+      setSku((producto as any).sku || "");
+      setPrioridad(String((producto as any).prioridad || "1"));
+      setTagPromo((producto as any).tag_promo || "");
+      setCaracteristicas((producto as any).caracteristicas || "");
+      setModoUso((producto as any).modo_uso || "");
       setDescripcion(producto.descripcion || "");
       setCategoriaId(producto.categoria_id || "");
       setPrecioBase(
@@ -119,6 +129,11 @@ export function ProductModal({
       if (producto.video_url) setModoVideo("upload");
     } else {
       setTitulo("");
+      setSku("");
+      setPrioridad("1");
+      setTagPromo("");
+      setCaracteristicas("");
+      setModoUso("");
       setDescripcion("");
       setCategoriaId("");
       setPrecioBase("");
@@ -238,6 +253,11 @@ export function ProductModal({
         id: producto?.id,
         nombre: titulo.trim(),
         titulo: titulo.trim(),
+        sku: sku.trim() || undefined,
+        prioridad: sanitizarNumero(prioridad, 1),
+        tag_promo: tagPromo.trim() || undefined,
+        caracteristicas: caracteristicas.trim() || undefined,
+        modo_uso: modoUso.trim() || undefined,
         descripcion: descripcion.trim() || null,
         precio_usd: precioNum,
         precio_base: precioNum.toFixed(2),
@@ -309,9 +329,52 @@ export function ProductModal({
               required
               value={titulo}
               onChange={(e) => setTitulo(e.target.value)}
-              placeholder="Ej. Batería Portátil 10000mAh Carga Rápida"
+              placeholder="Ej. Nike Air Force 1 Retro Emerald"
               className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-cyan-500 transition-colors"
             />
+          </div>
+
+          {/* SKU, Prioridad Visual y Tag Promo */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                SKU / Código Modelo
+              </label>
+              <input
+                type="text"
+                value={sku}
+                onChange={(e) => setSku(e.target.value)}
+                placeholder="Ej. ENC-CAL-001"
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                Prioridad Visual (1 = Primero)
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="99"
+                value={prioridad}
+                onChange={(e) => setPrioridad(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                Tag Promocional
+              </label>
+              <input
+                type="text"
+                value={tagPromo}
+                onChange={(e) => setTagPromo(e.target.value)}
+                placeholder="Ej. -20% PROMO, TENDENCIA"
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+              />
+            </div>
           </div>
 
           {/* Categoría y Unidad */}

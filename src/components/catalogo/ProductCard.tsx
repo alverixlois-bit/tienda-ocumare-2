@@ -1,18 +1,24 @@
 "use client";
 
 import React, { useState } from "react";
-import { ShoppingCart, Video, Check, Package, Flame, AlertCircle } from "lucide-react";
+import { ShoppingBag, Video, Check, Package, Flame, AlertCircle, Eye } from "lucide-react";
 import { ProductoRow } from "@/types/database.types";
-import { convertirUsdaVes, formatoUSD, formatoVES, sanitizarNumero } from "@/utils/currency";
+import { convertirUsdaVes, formatoUSD, formatoVES, sanitizarNumero, calcularAbono50 } from "@/utils/currency";
 import { useCart } from "@/context/CartContext";
 
 interface ProductCardProps {
   producto: ProductoRow;
   tasaBcv: number;
-  onOpenVideo: (videoUrl: string, titulo: string) => void;
+  onOpenVideo?: (videoUrl: string, titulo: string) => void;
+  onSelectProducto?: (producto: ProductoRow) => void;
 }
 
-export function ProductCard({ producto, tasaBcv, onOpenVideo }: ProductCardProps) {
+export function ProductCard({
+  producto,
+  tasaBcv,
+  onOpenVideo,
+  onSelectProducto,
+}: ProductCardProps) {
   const { agregarProducto } = useCart();
   const [agregadoAnim, setAgregadoAnim] = useState(false);
 
@@ -27,21 +33,34 @@ export function ProductCard({ producto, tasaBcv, onOpenVideo }: ProductCardProps
       : precioBaseNum;
 
   const precioVes = convertirUsdaVes(precioFinalUsd, tasaBcv);
+  const abonoUsd = calcularAbono50(precioFinalUsd);
+  const abonoVes = convertirUsdaVes(abonoUsd, tasaBcv);
+
   const stockNum = parseFloat(producto.stock ? producto.stock.toString() : "0");
   const pocoStock = stockNum > 0 && stockNum <= 3;
   const sinStock = stockNum <= 0;
 
-  function handleAgregar() {
+  function handleAgregar(e: React.MouseEvent) {
+    e.stopPropagation();
     if (sinStock) return;
     agregarProducto(producto, 1);
     setAgregadoAnim(true);
     setTimeout(() => setAgregadoAnim(false), 1200);
   }
 
+  function handleCardClick() {
+    if (onSelectProducto) {
+      onSelectProducto(producto);
+    }
+  }
+
   return (
-    <div className="group relative flex flex-col justify-between rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-cyan-500/50 transition-all duration-300 overflow-hidden shadow-lg hover:shadow-cyan-500/10 backdrop-blur">
+    <div
+      onClick={handleCardClick}
+      className="group relative flex flex-col justify-between rounded-3xl bg-white border border-slate-200/90 hover:border-[#064E3B]/40 transition-all duration-300 overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 cursor-pointer"
+    >
       {/* Contenedor de Imagen y Badges */}
-      <div className="relative aspect-square w-full bg-slate-950 overflow-hidden flex items-center justify-center">
+      <div className="relative aspect-square w-full bg-stone-100 overflow-hidden flex items-center justify-center">
         {imagenMostrar ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -50,29 +69,33 @@ export function ProductCard({ producto, tasaBcv, onOpenVideo }: ProductCardProps
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             onError={(e) => {
               (e.target as HTMLImageElement).src =
-                "https://placehold.co/400x400/0f172a/ffffff?text=OcumareHub";
+                "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600&auto=format&fit=crop&q=80";
             }}
           />
         ) : (
-          <div className="flex flex-col items-center justify-center text-slate-600">
+          <div className="flex flex-col items-center justify-center text-slate-400">
             <Package className="w-12 h-12 mb-2" />
             <span className="text-xs">Foto del encargo</span>
           </div>
         )}
 
-        {/* Badges superiores */}
+        {/* Badges superiores Stitch */}
         <div className="absolute top-3 left-3 flex flex-col gap-1.5 z-10">
-          {producto.en_oferta && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500 text-slate-950 shadow-md">
-              <Flame className="w-3.5 h-3.5 fill-current" />
-              OFERTA
+          {producto.en_oferta ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-extrabold bg-red-600 text-white shadow-md uppercase tracking-wider">
+              <Flame className="w-3 h-3 fill-current" />
+              Oferta
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-extrabold bg-[#064E3B] text-[#84CC16] shadow-md uppercase tracking-wider">
+              Boutique
             </span>
           )}
 
           {pocoStock && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-red-500/90 text-white shadow-md">
-              <AlertCircle className="w-3.5 h-3.5" />
-              ¡Solo {stockNum} disp.!
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-xl text-[10px] font-bold bg-amber-500 text-slate-950 shadow-sm">
+              <AlertCircle className="w-3 h-3" />
+              ¡Últimas {stockNum}!
             </span>
           )}
         </div>
@@ -83,88 +106,90 @@ export function ProductCard({ producto, tasaBcv, onOpenVideo }: ProductCardProps
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onOpenVideo(producto.video_url!, tituloMostrar);
+              if (onOpenVideo) onOpenVideo(producto.video_url!, tituloMostrar);
             }}
-            className="absolute bottom-3 right-3 p-2 rounded-xl bg-slate-950/80 hover:bg-cyan-500 text-white border border-slate-700 hover:border-cyan-400 transition-all shadow-lg flex items-center gap-1.5 text-xs font-medium backdrop-blur-md"
+            className="absolute bottom-3 left-3 p-2 rounded-xl bg-slate-900/80 hover:bg-[#064E3B] text-white transition-all shadow-md flex items-center gap-1.5 text-xs font-medium backdrop-blur-md"
             title="Ver video demostrativo"
           >
-            <Video className="w-4 h-4 text-cyan-400 hover:text-white" />
-            <span className="hidden sm:inline">Ver Video</span>
+            <Video className="w-3.5 h-3.5 text-[#84CC16]" />
+            <span className="text-[10px] font-bold hidden sm:inline">Video</span>
           </button>
         )}
+
+        {/* Quick View Pill */}
+        <div className="absolute inset-x-0 bottom-3 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className="px-3 py-1.5 rounded-full bg-white/90 backdrop-blur-md border border-slate-200 text-slate-800 text-[11px] font-bold flex items-center gap-1.5 shadow-md">
+            <Eye className="w-3.5 h-3.5 text-[#064E3B]" />
+            Ver Detalles
+          </span>
+        </div>
       </div>
 
       {/* Contenido / Información */}
-      <div className="p-4 flex flex-col flex-1 justify-between">
+      <div className="p-4 sm:p-5 flex flex-col flex-1 justify-between space-y-3">
         <div>
-          <div className="flex items-start justify-between gap-2 mb-1">
-            <h3 className="font-bold text-white text-base leading-snug line-clamp-1 group-hover:text-cyan-400 transition-colors">
-              {tituloMostrar}
-            </h3>
-          </div>
+          <h3 className="font-display font-extrabold text-sm sm:text-base text-slate-900 line-clamp-1 group-hover:text-[#064E3B] transition-colors">
+            {tituloMostrar}
+          </h3>
 
-          <p className="text-xs text-slate-400 line-clamp-2 mb-3">
-            {producto.descripcion || "Producto disponible para compras por encargo con abono del 50%."}
-          </p>
+          {producto.descripcion && (
+            <p className="text-xs text-slate-500 line-clamp-2 mt-1 leading-relaxed">
+              {producto.descripcion}
+            </p>
+          )}
         </div>
 
-        {/* Sección de Precios Duales (USD y Bolívares) */}
-        <div className="pt-3 border-t border-slate-800/80">
-          <div className="flex items-baseline justify-between mb-3">
+        {/* Pricing Dual & 50% Abono Box */}
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <div className="flex items-baseline justify-between">
             <div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-xl font-extrabold text-white">
-                  {formatoUSD(precioFinalUsd)}
-                </span>
-                {producto.en_oferta && producto.precio_oferta && (
-                  <span className="text-xs line-through text-slate-500">
-                    {formatoUSD(producto.precio_base)}
-                  </span>
-                )}
-              </div>
-              <span className="text-[11px] text-slate-400 block font-mono">
-                50% abono: {formatoUSD(precioFinalUsd / 2)}
+              <span className="font-display font-black text-lg sm:text-xl text-slate-900">
+                {formatoUSD(precioFinalUsd)}
               </span>
             </div>
-
             <div className="text-right">
-              <span className="text-sm font-bold text-emerald-400 font-mono block">
+              <span className="font-display font-extrabold text-xs text-amber-700">
                 {formatoVES(precioVes)}
               </span>
-              <span className="text-[10px] text-slate-500 block font-mono">
-                Tasa BCV {tasaBcv.toFixed(2)}
-              </span>
             </div>
           </div>
 
-          {/* Botón Agregar */}
-          <button
-            type="button"
-            disabled={sinStock}
-            onClick={handleAgregar}
-            className={`w-full py-2.5 px-4 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 transition-all duration-200 active:scale-95 shadow-md ${
-              sinStock
-                ? "bg-slate-800 text-slate-500 cursor-not-allowed"
-                : agregadoAnim
-                ? "bg-emerald-600 text-white shadow-emerald-500/20"
-                : "bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-600/20"
-            }`}
-          >
-            {agregadoAnim ? (
-              <>
-                <Check className="w-4 h-4" />
-                <span>¡Agregado al Carrito!</span>
-              </>
-            ) : sinStock ? (
-              <span>Agotado Temporalmente</span>
-            ) : (
-              <>
-                <ShoppingCart className="w-4 h-4" />
-                <span>Agregar al Carrito</span>
-              </>
-            )}
-          </button>
+          {/* Abono 50% Highlight */}
+          <div className="p-2 rounded-xl bg-[#84CC16]/15 border border-[#84CC16]/30 flex items-center justify-between text-[11px]">
+            <span className="font-bold text-[#14532D]">Abono 50%:</span>
+            <span className="font-display font-black text-[#14532D]">
+              {formatoUSD(abonoUsd)}
+            </span>
+          </div>
         </div>
+
+        {/* Botón de Acción Agregar */}
+        <button
+          type="button"
+          onClick={handleAgregar}
+          disabled={sinStock}
+          className={`w-full py-2.5 px-3 rounded-2xl font-display font-black text-xs flex items-center justify-center gap-2 transition-all shadow-sm ${
+            sinStock
+              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+              : agregadoAnim
+              ? "bg-[#064E3B] text-[#84CC16]"
+              : "bg-[#84CC16] hover:bg-[#65A30D] text-[#14532D] hover:shadow-md active:scale-95"
+          }`}
+        >
+          {sinStock ? (
+            <span>Agotado</span>
+          ) : agregadoAnim ? (
+            <>
+              <Check className="w-3.5 h-3.5" />
+              <span>¡Agregado!</span>
+            </>
+          ) : (
+            <>
+              <ShoppingBag className="w-3.5 h-3.5" />
+              <span>Agregar al Carrito</span>
+            </>
+          )}
+        </button>
       </div>
     </div>
   );

@@ -13,13 +13,23 @@ import {
   Tag,
   AlertTriangle,
   CheckCircle,
+  Upload,
+  Download,
+  ArrowUpDown,
+  Flame,
+  X,
+  FileSpreadsheet,
 } from "lucide-react";
 import { ProductoRow, CategoriaRow } from "@/types/database.types";
 import { createClient } from "@/lib/supabase/client";
 import { ProductModal } from "./ProductModal";
 import { convertirUsdaVes, formatoUSD, formatoVES, sanitizarNumero } from "@/utils/currency";
 import { obtenerCategorias } from "@/actions/categories";
-import { eliminarProducto as eliminarProductoAction } from "@/actions/products";
+import {
+  eliminarProducto as eliminarProductoAction,
+  actualizarPrioridadProducto,
+  importarProductosMasivoAction,
+} from "@/actions/products";
 
 interface InventoryTabProps {
   tasaBcv: number;
@@ -37,6 +47,12 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductoRow | null>(null);
+
+  // Importador Masivo CSV/Excel
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importCsvText, setImportCsvText] = useState("");
+  const [duplicateMode, setDuplicateMode] = useState<"sumar_stock" | "omitir">("sumar_stock");
+  const [importing, setImporting] = useState(false);
 
   const supabase = createClient();
 
@@ -136,6 +152,136 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
     setIsModalOpen(true);
   }
 
+  async function handleCambiarPrioridad(prodId: string, nuevaPrioridad: number) {
+    setProductos((prev) =>
+      prev.map((p) => (p.id === prodId ? { ...p, prioridad: nuevaPrioridad } as any : p))
+    );
+    try {
+      await actualizarPrioridadProducto(prodId, nuevaPrioridad);
+      showToast("Prioridad visual actualizada", "success");
+    } catch {
+      showToast("Error al guardar prioridad", "error");
+    }
+  }
+
+  async function handleToggleOferta(prod: ProductoRow) {
+    const nuevoEstado = !prod.en_oferta;
+    setProductos((prev) =>
+      prev.map((p) => (p.id === prod.id ? { ...p, en_oferta: nuevoEstado } : p))
+    );
+    try {
+      await supabase
+        .from("productos")
+        .update({ en_oferta: nuevoEstado, updated_at: new Date().toISOString() })
+        .eq("id", prod.id);
+      showToast(nuevoEstado ? "Producto marcado en oferta" : "Oferta removida", "info");
+    } catch {
+      showToast("Error al actualizar oferta", "error");
+    }
+  }
+
+  function exportToCsv() {
+    if (productos.length === 0) {
+      showToast("No hay productos para exportar", "info");
+      return;
+    }
+
+    const headers = ["SKU", "Nombre", "Categoria_ID", "Precio_USD", "Stock", "En_Oferta", "Precio_Oferta", "Prioridad", "Imagen_URL"];
+    const rows = productos.map((p) => [
+      `"${(p as any).sku || ""}"`,
+      `"${(p.nombre || p.titulo || "").replace(/"/g, '""')}"`,
+      `"${p.categoria_id || ""}"`,
+      p.precio_usd ?? p.precio_base ?? "0.00",
+      p.stock || "0",
+      p.en_oferta ? "SI" : "NO",
+      p.precio_oferta || "",
+      (p as any).prioridad || "1",
+      `"${p.imagen_url || ""}"`,
+    ]);
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `catalogo-boutique-${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Catálogo exportado exitosamente", "success");
+  }
+
+  async function handleEjecutarImportacion(e: React.FormEvent) {
+    e.preventDefault();
+    if (!importCsvText.trim()) return;
+
+    setImporting(true);
+    try {
+      // Parsear líneas CSV (admite coma o punto y coma)
+      const lineas = importCsvText.trim().split("\n");
+      const itemsParaImportar: any[] = [];
+
+      for (let i = 0; i < lineas.length; i++) {
+        const linea = lineas[i].trim();
+        if (!linea) continue;
+        if (i === 0 && (linea.toLowerCase().includes("nombre") || linea.toLowerCase().includes("sku"))) {
+          // Encabezado
+          continue;
+        }
+
+        const cols = linea.split(/[,;\t]/).map((c) => c.replace(/^["']|["']$/g, "").trim());
+        if (cols.length >= 2) {
+          // Formato esperado: [sku, nombre, precio_usd, stock] o [nombre, precio_usd, stock]
+          let sku = "";
+          let nombre = "";
+          let precioUsd = 0;
+          let stock = 10;
+
+          if (isNaN(parseFloat(cols[1])) && cols.length >= 3) {
+            sku = cols[0];
+            nombre = cols[1];
+            precioUsd = parseFloat(cols[2]) || 0;
+            stock = parseInt(cols[3] || "10", 10);
+          } else {
+            nombre = cols[0];
+            precioUsd = parseFloat(cols[1]) || 0;
+            stock = parseInt(cols[2] || "10", 10);
+          }
+
+          itemsParaImportar.push({
+            nombre,
+            sku,
+            precio_usd: precioUsd,
+            stock,
+            categoria_id: selectedCategory !== "all" ? selectedCategory : null,
+          });
+        }
+      }
+
+      if (itemsParaImportar.length === 0) {
+        showToast("No se detectaron productos válidos en el texto CSV.", "error");
+        setImporting(false);
+        return;
+      }
+
+      const res = await importarProductosMasivoAction(itemsParaImportar, duplicateMode);
+      if (res.success) {
+        showToast(
+          `Importación completa: ${res.creados} creados, ${res.actualizados} actualizados, ${res.omitidos} omitidos.`,
+          "success"
+        );
+        setIsImportModalOpen(false);
+        setImportCsvText("");
+        cargarDatos();
+      } else {
+        showToast(res.error || "Error al importar productos", "error");
+      }
+    } catch (err: any) {
+      showToast(err.message || "Error al procesar CSV", "error");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   // Filtrado seguro y blindado
   const listaProductos = Array.isArray(productos) ? productos : [];
   const searchLower = (search || "").toLowerCase().trim();
@@ -205,6 +351,24 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
           </select>
 
           <button
+            onClick={() => setIsImportModalOpen(true)}
+            title="Importar CSV/Excel con resolución de duplicados"
+            className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition-all"
+          >
+            <Upload className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">Importar</span>
+          </button>
+
+          <button
+            onClick={exportToCsv}
+            title="Exportar catálogo a CSV"
+            className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition-all"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Exportar</span>
+          </button>
+
+          <button
             onClick={cargarDatos}
             title="Recargar inventario"
             className="p-2.5 bg-slate-900 border border-slate-700 rounded-xl text-slate-300 hover:text-white hover:border-slate-500 transition-colors"
@@ -214,7 +378,7 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
 
           <button
             onClick={handleOpenCreate}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-semibold text-xs rounded-xl shadow-lg shadow-cyan-500/20 active:scale-95 transition-all"
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#84CC16] hover:bg-[#65A30D] text-[#14532D] font-display font-black text-xs rounded-xl shadow-lg shadow-[#84CC16]/20 active:scale-95 transition-all"
           >
             <Plus className="w-4 h-4" />
             <span>Agregar Producto</span>
@@ -378,25 +542,58 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
 
                 {/* Acciones de la tarjeta */}
                 <div className="flex items-center justify-between pt-2 border-t border-slate-800/70 text-xs">
-                  <button
-                    onClick={() => toggleActivo(prod)}
-                    className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors"
-                    title={prod.activo ? "Ocultar del catálogo" : "Publicar en el catálogo"}
-                  >
-                    {prod.activo ? (
-                      <>
-                        <EyeOff className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Ocultar</span>
-                      </>
-                    ) : (
-                      <>
-                        <Eye className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-emerald-400">Publicar</span>
-                      </>
-                    )}
-                  </button>
-
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => toggleActivo(prod)}
+                      className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors"
+                      title={prod.activo ? "Ocultar del catálogo" : "Publicar en el catálogo"}
+                    >
+                      {prod.activo ? (
+                        <>
+                          <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Ocultar</span>
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400">Publicar</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => handleToggleOferta(prod)}
+                      className={`p-1 rounded-lg transition-colors flex items-center gap-1 ${
+                        prod.en_oferta
+                          ? "text-amber-400 bg-amber-500/10"
+                          : "text-slate-500 hover:text-slate-300"
+                      }`}
+                      title={prod.en_oferta ? "Desactivar oferta" : "Activar oferta"}
+                    >
+                      <Flame className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {/* Prioridad Visual */}
+                    <div className="flex items-center gap-1 text-[11px] text-slate-400 bg-slate-950 px-2 py-0.5 rounded-lg border border-slate-800">
+                      <span>#</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="99"
+                        defaultValue={(prod as any).prioridad || 1}
+                        onBlur={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val) && val > 0) {
+                            handleCambiarPrioridad(prod.id, val);
+                          }
+                        }}
+                        className="w-8 bg-transparent text-white font-mono font-bold text-center outline-none"
+                        title="Prioridad visual (1 = primero en el catálogo)"
+                      />
+                    </div>
+
                     <button
                       onClick={() => handleOpenEdit(prod)}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-400 hover:bg-slate-800 transition-colors"
@@ -429,6 +626,106 @@ export function InventoryTab({ tasaBcv, showToast }: InventoryTabProps) {
         categorias={categorias}
         showToast={showToast}
       />
+
+      {/* Modal Importador Masivo CSV/Excel */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <form
+            onSubmit={handleEjecutarImportacion}
+            className="relative w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-cyan-400" />
+                <h4 className="font-display font-bold text-white text-sm">
+                  Importación Masiva de Productos (CSV / Excel)
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Pega las filas exportadas de tu hoja de cálculo (Excel / Google Sheets) o archivo CSV. Formato aceptado por fila: <code className="text-cyan-300">SKU, Nombre, Precio_USD, Stock</code> o <code className="text-cyan-300">Nombre, Precio_USD, Stock</code>.
+            </p>
+
+            {/* Resolución interactiva de duplicados */}
+            <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+              <span className="font-display font-bold text-xs text-slate-300 block">
+                Resolución de Duplicados (si coincide el SKU o Nombre):
+              </span>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setDuplicateMode("sumar_stock")}
+                  className={`p-2.5 rounded-xl border font-bold text-left transition-all ${
+                    duplicateMode === "sumar_stock"
+                      ? "border-[#84CC16] bg-[#84CC16]/10 text-[#84CC16]"
+                      : "border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <span>Sumar al Stock</span>
+                  <p className="text-[10px] font-normal text-slate-400 mt-0.5">
+                    Incrementa el stock existente con las nuevas unidades.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDuplicateMode("omitir")}
+                  className={`p-2.5 rounded-xl border font-bold text-left transition-all ${
+                    duplicateMode === "omitir"
+                      ? "border-cyan-400 bg-cyan-500/10 text-cyan-300"
+                      : "border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <span>Omitir Duplicados</span>
+                  <p className="text-[10px] font-normal text-slate-400 mt-0.5">
+                    Mantiene el producto existente intacto sin modificarlo.
+                  </p>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">
+                Contenido CSV o líneas copiadas:
+              </label>
+              <textarea
+                rows={6}
+                required
+                value={importCsvText}
+                onChange={(e) => setImportCsvText(e.target.value)}
+                placeholder="ENC-CAL-001, Nike Air Force 1 Emerald, 35.00, 10&#10;ENC-CAL-002, Adidas Forum Low, 38.00, 15&#10;Hoodie Oversize Sand, 28.00, 20"
+                className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-700 bg-slate-950 text-white font-mono text-xs outline-none focus:border-[#84CC16]"
+              />
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={importing || !importCsvText.trim()}
+                className="px-5 py-2.5 rounded-xl bg-[#84CC16] hover:bg-[#65A30D] text-[#14532D] font-display font-black text-xs flex items-center gap-1.5 shadow-md disabled:opacity-50"
+              >
+                {importing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                <span>Ejecutar Importación Masiva</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

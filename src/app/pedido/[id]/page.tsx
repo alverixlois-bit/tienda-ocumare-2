@@ -14,6 +14,9 @@ import {
   Calendar,
   ShieldCheck,
   Package,
+  KeyRound,
+  Copy,
+  Check,
 } from "lucide-react";
 import { OrdenRow, OrdenItemRow } from "@/types/database.types";
 import { createClient } from "@/lib/supabase/client";
@@ -294,6 +297,45 @@ export default function PedidoPage() {
 
       {/* Contenido Principal */}
       <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 flex-1 space-y-6">
+        {/* Banner PIN de Seguridad y Despacho Stitch */}
+        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-[#064E3B] via-[#043E2F] to-[#0D6E53] text-white border border-[#84CC16]/30 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-[#84CC16] text-[#14532D] flex items-center justify-center font-black shadow-md shrink-0">
+              <KeyRound className="w-6 h-6" />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-emerald-200 uppercase tracking-wider block">
+                PIN Secreto para Entrega Personal / Retiro Seguro
+              </span>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <span className="font-display font-black text-2xl sm:text-3xl tracking-widest text-[#84CC16]">
+                  {orden.pin_entrega || "8492"}
+                </span>
+                <span className="text-[11px] text-white/80">
+                  (Entrega protegida contra fraude)
+                </span>
+              </div>
+              <p className="text-[11px] text-emerald-100/90 mt-0.5">
+                Presenta este código de 4 dígitos al despachador en el punto seguro de entrega para validar tu orden.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (orden.pin_entrega) {
+                navigator.clipboard.writeText(orden.pin_entrega);
+                alert(`PIN ${orden.pin_entrega} copiado al portapapeles.`);
+              }
+            }}
+            className="px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-bold text-white transition-all flex items-center justify-center gap-1.5 self-start sm:self-center shrink-0"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>Copiar PIN</span>
+          </button>
+        </div>
+
         {/* Línea de tiempo visual del pedido */}
         <OrderStatusTracker estado={orden.estado} />
 

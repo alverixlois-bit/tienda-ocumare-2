@@ -19,13 +19,24 @@ import {
   UploadCloud,
   FileCheck2,
   AlertCircle,
+  KeyRound,
+  Calendar,
+  Clock,
+  Banknote,
+  DollarSign,
 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { createClient } from "@/lib/supabase/client";
-import { OrdenInsert, OrdenItemInsert, MetodoEntrega } from "@/types/database.types";
+import { MetodoEntrega, PuntoEntregaRow } from "@/types/database.types";
 import { formatoUSD, formatoVES } from "@/utils/currency";
 import { obtenerConfiguracionTienda, ConfiguracionTiendaData } from "@/actions/config";
 import { crearPedidoAction } from "@/actions/orders";
+
+const DEFAULT_PUNTOS_ENTREGA = [
+  { id: "pto-1", nombre: "Plaza Bolívar Ocumare (Kiosco Central al lado de la estatua)", direccion: "Casco Central Ocumare", horario: "Lun-Sáb 9:00 AM - 4:00 PM" },
+  { id: "pto-2", nombre: "C.C. Colonial - Entrada Principal (Frente a Farmatodo)", direccion: "Av. Miranda Centro", horario: "Lun-Sáb 10:00 AM - 5:00 PM" },
+  { id: "pto-3", nombre: "Estación Ferrocarril Charallave Sur (Nivel Mezzanina)", direccion: "Terminal Charallave", horario: "Lun-Vie 11:00 AM - 3:00 PM" },
+];
 
 export function CheckoutModal() {
   const router = useRouter();
@@ -33,12 +44,16 @@ export function CheckoutModal() {
     items,
     isCheckoutOpen,
     setIsCheckoutOpen,
+    tipoPago,
+    setTipoPago,
     subtotalUSD,
     subtotalVES,
     abonoUSD,
     abonoVES,
     saldoPendienteUSD,
     saldoPendienteVES,
+    montoPagarUSD,
+    montoPagarVES,
     tasaBcv,
     limpiarCarrito,
   } = useCart();
@@ -51,6 +66,17 @@ export function CheckoutModal() {
   const [metodoEntrega, setMetodoEntrega] = useState<MetodoEntrega>("zoom");
   const [notas, setNotas] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+
+  // Puntos Seguros y Entrega Personal
+  const [puntosEntrega, setPuntosEntrega] = useState<any[]>(DEFAULT_PUNTOS_ENTREGA);
+  const [puntoSeleccionadoId, setPuntoSeleccionadoId] = useState(DEFAULT_PUNTOS_ENTREGA[0].id);
+  const [fechaEntrega, setFechaEntrega] = useState("");
+  const [horaEntrega, setHoraEntrega] = useState("10:00 AM - 12:00 PM");
+  const [metodoPagoSitio, setMetodoPagoSitio] = useState("efectivo_usd");
+  const [denominacionBillete, setDenominacionBillete] = useState("Monto exacto");
+
+  // Tab de datos bancarios activos: 'pago_movil' | 'transferencia' | 'binance' | 'efectivo'
+  const [bancoTab, setBancoTab] = useState<"pago_movil" | "transferencia" | "binance" | "efectivo">("pago_movil");
 
   // Datos bancarios de configuracion_tienda
   const [configTienda, setConfigTienda] = useState<ConfiguracionTiendaData | null>(null);
@@ -67,17 +93,28 @@ export function CheckoutModal() {
   useEffect(() => {
     if (isCheckoutOpen) {
       cargarConfigTienda();
+      cargarPuntosEntrega();
     }
   }, [isCheckoutOpen]);
 
   async function cargarConfigTienda() {
     try {
       const conf = await obtenerConfiguracionTienda();
-      if (conf) {
-        setConfigTienda(conf);
-      }
+      if (conf) setConfigTienda(conf);
     } catch (err) {
       console.warn("Aviso al cargar datos bancarios:", err);
+    }
+  }
+
+  async function cargarPuntosEntrega() {
+    try {
+      const { data } = await supabase.from("puntos_entrega").select("*").eq("activo", true);
+      if (Array.isArray(data) && data.length > 0) {
+        setPuntosEntrega(data);
+        setPuntoSeleccionadoId(String(data[0].id));
+      }
+    } catch (err) {
+      console.warn("Usando puntos por defecto:", err);
     }
   }
 
@@ -98,68 +135,79 @@ export function CheckoutModal() {
     try {
       const ext = file.name.split(".").pop() || "jpg";
       const cleanBase = (file.name || "comprobante")
-        .substring(0, file.name.lastIndexOf(".") || file.name.length)
-        .replace(/[^a-zA-Z0-9_-]/g, "_");
-      const filePath = `comprobantes/${Date.now()}_${cleanBase}.${ext}`;
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "-")
+        .slice(0, 20);
+      const fileName = `comprobante-${Date.now()}-${cleanBase}.${ext}`;
 
-      const { data, error } = await supabase.storage
-        .from("productos")
-        .upload(filePath, file, { cacheControl: "3600", upsert: true });
+      let bucketName = "comprobantes";
+      let uploadRes = await supabase.storage.from(bucketName).upload(fileName, file);
 
-      if (error) {
-        console.error("Error al subir comprobante a Supabase Storage:", error);
-        setUploadError(`Error de subida: ${error.message}`);
-        return;
+      if (uploadRes.error) {
+        bucketName = "productos";
+        uploadRes = await supabase.storage.from(bucketName).upload(fileName, file);
       }
 
-      const { data: pubData } = supabase.storage.from("productos").getPublicUrl(filePath);
-      if (pubData && pubData.publicUrl) {
-        setComprobanteUrl(pubData.publicUrl);
+      if (uploadRes.error) {
+        throw new Error(uploadRes.error.message || "No se pudo subir a Supabase Storage.");
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Error al procesar archivo";
-      setUploadError(msg);
+
+      const { data: publicData } = supabase.storage.from(bucketName).getPublicUrl(fileName);
+      if (publicData?.publicUrl) {
+        setComprobanteUrl(publicData.publicUrl);
+      }
+    } catch (err: any) {
+      console.error("Error subiendo comprobante:", err);
+      setUploadError(err.message || "Error al subir comprobante a Supabase.");
     } finally {
       setSubiendoComprobante(false);
     }
   }
 
-  if (!isCheckoutOpen) return null;
-
-  async function handleConfirmOrder(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg("");
-    setLoading(true);
 
-    const listaItems = Array.isArray(items) ? items : [];
-
-    if (listaItems.length === 0) {
-      setErrorMsg("El carrito está vacío");
-      setLoading(false);
+    if (!nombre.trim() || !cedula.trim() || !telefono.trim()) {
+      setErrorMsg("Por favor completa tu Nombre, Cédula y Teléfono WhatsApp.");
       return;
     }
 
-    try {
-      const formattedItems = listaItems.map((item) => {
-        const precioUsd =
-          item.producto.en_oferta && item.producto.precio_oferta
-            ? item.producto.precio_oferta
-            : item.producto.precio_base;
+    if (metodoEntrega !== "personal" && !direccion.trim()) {
+      setErrorMsg("Indica la dirección o agencia de envío (Zoom, Tealca o MRW).");
+      return;
+    }
 
-        return {
-          productoId: item.producto.id,
-          titulo: item.producto.titulo || item.producto.nombre || "Producto",
-          unidadMedida: item.producto.unidad_medida,
-          precioUsd,
-          cantidad: item.cantidad,
-        };
-      });
+    if (items.length === 0) {
+      setErrorMsg("Tu carrito está vacío.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const puntoObj = puntosEntrega.find((p) => p.id === puntoSeleccionadoId);
+      const direccionFinal =
+        metodoEntrega === "personal"
+          ? `Entrega Personal en: ${puntoObj?.nombre || "Punto acordado"}`
+          : direccion.trim();
+
+      const itemsPayload = items.map((i) => ({
+        productoId: i.producto.id,
+        titulo: i.producto.titulo || i.producto.nombre || "Producto",
+        unidadMedida: i.producto.unidad_medida || "unidad",
+        precioUsd:
+          i.producto.en_oferta && i.producto.precio_oferta
+            ? i.producto.precio_oferta
+            : (i.producto.precio_usd ?? i.producto.precio_base),
+        cantidad: i.cantidad,
+      }));
 
       const res = await crearPedidoAction({
         nombre: nombre.trim(),
         cedula: cedula.trim(),
         telefono: telefono.trim(),
-        direccion: direccion.trim(),
+        direccion: direccionFinal,
         metodoEntrega,
         referenciaPago: referenciaPago.trim() || null,
         comprobanteUrl: comprobanteUrl || null,
@@ -168,383 +216,469 @@ export function CheckoutModal() {
         subtotalVES,
         abonoUSD,
         abonoVES,
-        saldoPendienteUSD,
-        saldoPendienteVES,
+        saldoPendienteUSD: tipoPago === "total_100" ? 0 : saldoPendienteUSD,
+        saldoPendienteVES: tipoPago === "total_100" ? 0 : saldoPendienteVES,
         tasaBcv,
-        items: formattedItems,
+        items: itemsPayload,
+        // Datos Stitch
+        tipoEntrega: metodoEntrega === "personal" ? "personal" : "nacional",
+        puntoEntregaId: metodoEntrega === "personal" ? puntoSeleccionadoId : null,
+        puntoEntregaNombre: metodoEntrega === "personal" ? puntoObj?.nombre : null,
+        fechaEntrega: metodoEntrega === "personal" ? fechaEntrega : null,
+        horaEntrega: metodoEntrega === "personal" ? horaEntrega : null,
+        metodoPagoSitio: metodoEntrega === "personal" ? metodoPagoSitio : null,
+        denominacionBillete: metodoEntrega === "personal" ? denominacionBillete : null,
+        tipoPago,
       });
 
-      if (!res.success || !res.pedidoId) {
-        throw new Error(res.error || "No se pudo crear el pedido");
+      if (!res.success) {
+        throw new Error(res.error || "No se pudo registrar el encargo.");
       }
 
-      // Limpiar carrito y redirigir
       limpiarCarrito();
       setIsCheckoutOpen(false);
-      router.push(`/pedido/${res.pedidoId}`);
-    } catch (err: unknown) {
-      console.error("Error al procesar checkout:", err);
-      const msg = err instanceof Error ? err.message : "Error al procesar el encargo";
-      setErrorMsg(msg);
-    } finally {
+
+      const trackingId = res.numeroOrden || res.pedidoId;
+      router.push(`/pedido/${trackingId}`);
+    } catch (err: any) {
+      console.error("Error al confirmar encargo:", err);
+      setErrorMsg(err.message || "Error al procesar el pedido.");
       setLoading(false);
     }
   }
 
-  // Datos bancarios fallback
-  const pagoMovilBanco = configTienda?.pago_movil_banco || "0102 - Banco de Venezuela";
-  const pagoMovilTelefono = configTienda?.pago_movil_telefono || "04121234567";
-  const pagoMovilCedula = configTienda?.pago_movil_cedula || "V-12345678";
-
-  const transfBanco = configTienda?.transferencia_banco || "Banesco Banco Universal";
-  const transfCuenta = configTienda?.transferencia_cuenta || "0134-0000-00-0000000000";
-  const transfTitular = configTienda?.transferencia_beneficiario || "OcumareHub C.A.";
-  const transfRif = configTienda?.transferencia_rif || "J-12345678-0";
-
-  const binanceEmail = configTienda?.binance_pay_email?.trim();
-  const binanceId = configTienda?.binance_pay_id?.trim();
+  if (!isCheckoutOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto animate-in fade-in">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl my-8 overflow-hidden shadow-2xl">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-emerald-400" />
-            <h2 className="font-bold text-white text-base">Finalizar Pedido por Encargo</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-sm overflow-y-auto animate-in fade-in">
+      <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200">
+        
+        {/* Header Modal */}
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-stone-50">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-[#064E3B] text-[#84CC16] flex items-center justify-center font-bold">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="font-display font-extrabold text-slate-900 text-sm sm:text-base leading-tight">
+                Confirmar y Reservar Encargo
+              </h2>
+              <span className="text-[11px] text-slate-500 font-medium">
+                Reserva hoy con 50% de abono o pago completo 100%
+              </span>
+            </div>
           </div>
           <button
             onClick={() => setIsCheckoutOpen(false)}
-            className="p-1 rounded-lg text-slate-400 hover:text-white transition-colors"
+            className="w-8 h-8 rounded-full bg-white hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Formulario */}
-        <form onSubmit={handleConfirmOrder} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="overflow-y-auto p-5 sm:p-6 space-y-5">
           {errorMsg && (
-            <div className="p-3 rounded-xl bg-red-950/50 border border-red-500/40 text-red-200 text-xs">
-              {errorMsg}
+            <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 flex items-center gap-2 text-xs font-semibold text-red-700">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMsg}</span>
             </div>
           )}
 
-          {/* Caja Resumen Financiero 50% Abono */}
-          <div className="p-4 rounded-xl bg-emerald-950/30 border border-emerald-500/30 flex items-center justify-between">
-            <div>
-              <span className="text-xs text-emerald-300 font-semibold block">
-                Abono Requerido para Iniciar Pedido (50%):
-              </span>
-              <span className="text-xl font-extrabold text-white font-mono">
-                {formatoUSD(abonoUSD)}
-              </span>
-              <span className="text-xs text-emerald-400 font-mono block">
-                = {formatoVES(abonoVES)} (Tasa BCV: {tasaBcv.toFixed(2)})
-              </span>
-            </div>
-
-            <div className="text-right text-xs text-slate-400">
-              <span className="block font-medium">Saldo contra entrega:</span>
-              <span className="font-mono text-white font-semibold">
-                {formatoUSD(saldoPendienteUSD)}
-              </span>
-            </div>
-          </div>
-
-          {/* PASARELA DE PAGO: CUENTAS RECEPTORAS OFICIALES */}
-          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
-            <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider block">
-              Cuentas Oficiales para el Abono del 50%
+          {/* Modalidad de Pago (Selector 50% vs 100%) */}
+          <div className="p-4 rounded-2xl bg-stone-50 border border-slate-200/90 space-y-3">
+            <span className="font-display font-bold text-xs text-slate-700 block">
+              1. Selecciona Modalidad de Pago:
             </span>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              {/* Opción 1: Pago Móvil */}
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5">
-                <div className="flex items-center gap-1.5 font-bold text-white text-[11px] text-cyan-300">
-                  <Smartphone className="w-3.5 h-3.5" />
-                  <span>Pago Móvil</span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setTipoPago("abono_50")}
+                className={`p-3 rounded-2xl border text-left transition-all ${
+                  tipoPago === "abono_50"
+                    ? "border-[#064E3B] bg-[#064E3B]/5 shadow-sm"
+                    : "border-slate-200 bg-white hover:border-slate-300"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-display font-extrabold text-xs text-[#064E3B]">
+                    Abono del 50%
+                  </span>
+                  <span className="w-4 h-4 rounded-full bg-[#84CC16] text-[#14532D] text-[10px] font-black flex items-center justify-center">
+                    ✓
+                  </span>
                 </div>
-                <p className="text-slate-400 text-[11px] truncate">
-                  <span className="text-slate-500">Banco:</span> {pagoMovilBanco}
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Pagas hoy <strong className="text-slate-800">{formatoUSD(abonoUSD)}</strong> y el resto al recibir.
                 </p>
-                <div className="flex items-center justify-between font-mono text-[11px]">
-                  <span className="text-white font-semibold">{pagoMovilTelefono}</span>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(pagoMovilTelefono, "pago_movil_telf")}
-                    className="p-1 hover:text-white text-slate-400"
-                    title="Copiar teléfono"
-                  >
-                    {copiedField === "pago_movil_telf" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                  </button>
-                </div>
-                <div className="flex items-center justify-between font-mono text-[11px]">
-                  <span className="text-slate-300">{pagoMovilCedula}</span>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(pagoMovilCedula, "pago_movil_ced")}
-                    className="p-1 hover:text-white text-slate-400"
-                    title="Copiar Cédula"
-                  >
-                    {copiedField === "pago_movil_ced" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                  </button>
-                </div>
-              </div>
+              </button>
 
-              {/* Opción 2: Transferencia Bancaria */}
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5">
-                <div className="flex items-center gap-1.5 font-bold text-white text-[11px] text-teal-300">
-                  <Landmark className="w-3.5 h-3.5" />
-                  <span>Transferencia Bancaria</span>
+              <button
+                type="button"
+                onClick={() => setTipoPago("total_100")}
+                className={`p-3 rounded-2xl border text-left transition-all ${
+                  tipoPago === "total_100"
+                    ? "border-[#064E3B] bg-[#064E3B]/5 shadow-sm"
+                    : "border-slate-200 bg-white hover:border-slate-300"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-display font-extrabold text-xs text-slate-900">
+                    Pago 100% Total
+                  </span>
                 </div>
-                <p className="text-slate-400 text-[11px] truncate">
-                  <span className="text-slate-500">Banco:</span> {transfBanco}
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Pagas el total <strong className="text-slate-800">{formatoUSD(subtotalUSD)}</strong> de inmediato.
                 </p>
-                <div className="flex items-center justify-between font-mono text-[11px]">
-                  <span className="text-teal-300 font-semibold truncate max-w-[130px]">{transfCuenta}</span>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(transfCuenta, "transf_cta")}
-                    className="p-1 hover:text-white text-slate-400"
-                    title="Copiar cuenta"
-                  >
-                    {copiedField === "transf_cta" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                  </button>
-                </div>
-                <div className="flex items-center justify-between font-mono text-[11px]">
-                  <span className="text-slate-300 truncate max-w-[130px]">{transfRif}</span>
-                  <span className="text-[10px] text-slate-500 truncate max-w-[80px]">{transfTitular}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Binance Pay si está disponible */}
-            {(binanceEmail || binanceId) && (
-              <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 flex items-center justify-between text-xs font-mono">
-                <div className="flex items-center gap-1.5 text-amber-400 text-[11px]">
-                  <Coins className="w-3.5 h-3.5" />
-                  <span>Binance Pay: {binanceEmail || binanceId}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => copyToClipboard((binanceEmail || binanceId)!, "binance_checkout")}
-                  className="p-1 hover:text-white text-slate-400"
-                  title="Copiar Binance"
-                >
-                  {copiedField === "binance_checkout" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* DATOS DEL COMPROBANTE Y REFERENCIA DE PAGO */}
-          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-3">
-            <span className="text-xs font-bold text-white uppercase tracking-wider block">
-              Reporte del Pago (Opcional o recomendado)
-            </span>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Referencia bancaria */}
-              <div>
-                <label className="block text-[11px] text-slate-400 font-medium mb-1">
-                  Número de Referencia Bancaria
-                </label>
-                <input
-                  type="text"
-                  value={referenciaPago}
-                  onChange={(e) => setReferenciaPago(e.target.value)}
-                  placeholder="Ej. 123456 o 4 últimos dígitos"
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-mono focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              {/* Subida de Capture / Comprobante */}
-              <div>
-                <label className="block text-[11px] text-slate-400 font-medium mb-1">
-                  Foto o Capture del Pago
-                </label>
-                <div className="relative">
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    id="comprobante-upload"
-                  />
-                  <label
-                    htmlFor="comprobante-upload"
-                    className="flex items-center justify-center gap-2 px-3 py-2 bg-slate-900 border border-dashed border-slate-700 hover:border-cyan-500 rounded-xl text-xs text-slate-300 hover:text-white cursor-pointer transition-colors"
-                  >
-                    {subiendoComprobante ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-                        <span>Subiendo...</span>
-                      </>
-                    ) : comprobanteUrl ? (
-                      <>
-                        <FileCheck2 className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-emerald-400 font-semibold truncate max-w-[140px]">
-                          Capture adjunto
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <UploadCloud className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Adjuntar Capture</span>
-                      </>
-                    )}
-                  </label>
-                </div>
-                {uploadError && (
-                  <p className="text-[10px] text-red-400 mt-1 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" />
-                    <span>{uploadError}</span>
-                  </p>
-                )}
-              </div>
+              </button>
             </div>
           </div>
 
           {/* Datos Personales */}
           <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-                Nombre y Apellido *
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+            <span className="font-display font-bold text-xs text-slate-700 block">
+              2. Datos del Destinatario:
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">Nombre Completo *</label>
                 <input
                   type="text"
                   required
                   value={nombre}
                   onChange={(e) => setNombre(e.target.value)}
-                  placeholder="Ej. Juan Pérez"
-                  className="w-full pl-9 pr-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs sm:text-sm focus:outline-none focus:border-cyan-500"
+                  placeholder="Ej: Roberto Gómez"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-[#064E3B]/20 focus:border-[#064E3B] outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">Cédula / RIF *</label>
+                <input
+                  type="text"
+                  required
+                  value={cedula}
+                  onChange={(e) => setCedula(e.target.value)}
+                  placeholder="Ej: V-24123456"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-[#064E3B]/20 focus:border-[#064E3B] outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">Teléfono WhatsApp *</label>
+                <input
+                  type="tel"
+                  required
+                  value={telefono}
+                  onChange={(e) => setTelefono(e.target.value)}
+                  placeholder="Ej: 0412-1234567"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-[#064E3B]/20 focus:border-[#064E3B] outline-none"
                 />
               </div>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-                  Cédula / RIF *
-                </label>
-                <div className="relative">
-                  <CreditCard className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  <input
-                    type="text"
-                    required
-                    value={cedula}
-                    onChange={(e) => setCedula(e.target.value)}
-                    placeholder="V-12345678"
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs sm:text-sm focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-                  Teléfono / WhatsApp *
-                </label>
-                <div className="relative">
-                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  <input
-                    type="tel"
-                    required
-                    value={telefono}
-                    onChange={(e) => setTelefono(e.target.value)}
-                    placeholder="0412 1234567"
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs sm:text-sm focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-              </div>
-            </div>
           </div>
 
-          {/* Método de Entrega */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-              Método de Envío o Entrega *
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {(
-                [
-                  { id: "zoom", label: "ZOOM" },
-                  { id: "mrw", label: "MRW" },
-                  { id: "tealca", label: "TEALCA" },
-                  { id: "personal", label: "PERSONAL" },
-                ] as const
-              ).map((metodo) => (
+          {/* Método de Entrega: Nacional vs Entrega Personal */}
+          <div className="space-y-3">
+            <span className="font-display font-bold text-xs text-slate-700 block">
+              3. Método de Despacho:
+            </span>
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { id: "zoom", label: "Zoom", sub: "Nacional" },
+                { id: "tealca", label: "Tealca", sub: "Nacional" },
+                { id: "mrw", label: "MRW", sub: "Nacional" },
+                { id: "personal", label: "Personal", sub: "Punto Seguro" },
+              ].map((m) => (
                 <button
+                  key={m.id}
                   type="button"
-                  key={metodo.id}
-                  onClick={() => setMetodoEntrega(metodo.id)}
-                  className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
-                    metodoEntrega === metodo.id
-                      ? "bg-cyan-500 text-white border-cyan-400 shadow-md shadow-cyan-500/20"
-                      : "bg-slate-950 border-slate-700 text-slate-400 hover:text-white"
+                  onClick={() => setMetodoEntrega(m.id as MetodoEntrega)}
+                  className={`p-2.5 rounded-2xl border text-center transition-all ${
+                    metodoEntrega === m.id
+                      ? "border-[#064E3B] bg-[#064E3B] text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                   }`}
                 >
-                  {metodo.label}
+                  <span className="font-display font-black text-xs block">{m.label}</span>
+                  <span className={`text-[10px] block ${metodoEntrega === m.id ? "text-emerald-200" : "text-slate-400"}`}>
+                    {m.sub}
+                  </span>
                 </button>
               ))}
             </div>
+
+            {/* Campos condicionales de entrega */}
+            {metodoEntrega === "personal" ? (
+              <div className="p-4 rounded-2xl bg-[#064E3B]/5 border border-[#064E3B]/20 space-y-3">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-[#064E3B]">
+                  <KeyRound className="w-4 h-4 text-[#84CC16]" />
+                  <span>Entrega Personal Segura (Protegida con PIN de 4 dígitos)</span>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                    Punto Seguro de Encuentro:
+                  </label>
+                  <select
+                    value={puntoSeleccionadoId}
+                    onChange={(e) => setPuntoSeleccionadoId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs bg-white focus:border-[#064E3B] outline-none"
+                  >
+                    {puntosEntrega.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nombre} {p.horario ? `(${p.horario})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                      Método de Pago para Saldo en Sitio:
+                    </label>
+                    <select
+                      value={metodoPagoSitio}
+                      onChange={(e) => setMetodoPagoSitio(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs bg-white focus:border-[#064E3B] outline-none"
+                    >
+                      <option value="efectivo_usd">Efectivo Divisas (USD)</option>
+                      <option value="pago_movil_sitio">Pago Móvil en Sitio</option>
+                      <option value="efectivo_ves">Efectivo Bolívares (VES)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                      Denominación de Billete (para cambio exacto):
+                    </label>
+                    <select
+                      value={denominacionBillete}
+                      onChange={(e) => setDenominacionBillete(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs bg-white focus:border-[#064E3B] outline-none"
+                    >
+                      <option value="Monto exacto">Monto Exacto (Sin cambio)</option>
+                      <option value="Billete de $20">Tengo billete de $20</option>
+                      <option value="Billete de $50">Tengo billete de $50</option>
+                      <option value="Billete de $100">Tengo billete de $100</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                  Dirección o Código de Agencia {metodoEntrega.toUpperCase()} *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={direccion}
+                  onChange={(e) => setDireccion(e.target.value)}
+                  placeholder="Ej: Agencia Zoom Ocumare Centro, Calle Miranda N° 12"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-[#064E3B]/20 focus:border-[#064E3B] outline-none"
+                />
+              </div>
+            )}
           </div>
 
-          {/* Dirección o Agencia destino */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-              Dirección de Entrega / Sucursal de Agencia *
-            </label>
-            <div className="relative">
-              <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-              <input
-                type="text"
-                required
-                value={direccion}
-                onChange={(e) => setDireccion(e.target.value)}
-                placeholder="Ciudad, Agencia receptora o dirección exacta de entrega..."
-                className="w-full pl-9 pr-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs sm:text-sm focus:outline-none focus:border-cyan-500"
-              />
+          {/* Cuentas Bancarias y Pasarela */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-display font-bold text-xs text-slate-700 block">
+                4. Realiza tu Pago ({formatoUSD(montoPagarUSD)} / {formatoVES(montoPagarVES)}):
+              </span>
+              <span className="text-[11px] font-bold text-amber-700">
+                Tasa BCV: Bs. {tasaBcv.toFixed(2)}
+              </span>
             </div>
+
+            {/* Tabs de métodos bancarios */}
+            <div className="flex items-center gap-1.5 border-b border-slate-200 pb-2">
+              <button
+                type="button"
+                onClick={() => setBancoTab("pago_movil")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  bancoTab === "pago_movil"
+                    ? "bg-[#064E3B] text-[#84CC16]"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                Pago Móvil
+              </button>
+              <button
+                type="button"
+                onClick={() => setBancoTab("transferencia")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  bancoTab === "transferencia"
+                    ? "bg-[#064E3B] text-[#84CC16]"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                Transferencia
+              </button>
+              <button
+                type="button"
+                onClick={() => setBancoTab("binance")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  bancoTab === "binance"
+                    ? "bg-[#064E3B] text-[#84CC16]"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                Binance / USDT
+              </button>
+            </div>
+
+            {/* Datos del banco activo */}
+            <div className="p-3.5 rounded-2xl bg-stone-50 border border-slate-200 text-xs space-y-2">
+              {bancoTab === "pago_movil" && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">Banco:</span>
+                    <span className="font-bold text-slate-800">{configTienda?.pago_movil_banco || "Banco de Venezuela (0102)"}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">Teléfono:</span>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(configTienda?.pago_movil_telefono || "04121234567", "pm_tel")}
+                      className="font-mono font-bold text-[#064E3B] flex items-center gap-1 hover:underline"
+                    >
+                      <span>{configTienda?.pago_movil_telefono || "0412-1234567"}</span>
+                      {copiedField === "pm_tel" ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">C.I. / RIF:</span>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(configTienda?.pago_movil_cedula || "V-12345678", "pm_ci")}
+                      className="font-mono font-bold text-[#064E3B] flex items-center gap-1 hover:underline"
+                    >
+                      <span>{configTienda?.pago_movil_cedula || "V-12345678"}</span>
+                      {copiedField === "pm_ci" ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {bancoTab === "transferencia" && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">Banco:</span>
+                    <span className="font-bold text-slate-800">{configTienda?.transferencia_banco || "Banesco (0134)"}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">Cuenta:</span>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(configTienda?.transferencia_cuenta || "01340000000000000000", "tr_cta")}
+                      className="font-mono font-bold text-[#064E3B] flex items-center gap-1 hover:underline"
+                    >
+                      <span className="text-[11px] truncate max-w-[180px]">{configTienda?.transferencia_cuenta || "0134-0000-00-0000000000"}</span>
+                      {copiedField === "tr_cta" ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">Titular:</span>
+                    <span className="font-bold text-slate-800">{configTienda?.transferencia_beneficiario || "Encargos Boutique C.A."}</span>
+                  </div>
+                </div>
+              )}
+
+              {bancoTab === "binance" && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">Binance Pay ID:</span>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(configTienda?.binance_pay_id || "49812903", "bin_id")}
+                      className="font-mono font-bold text-[#064E3B] flex items-center gap-1 hover:underline"
+                    >
+                      <span>{configTienda?.binance_pay_id || "49812903"}</span>
+                      {copiedField === "bin_id" ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">Email Binance:</span>
+                    <span className="font-bold text-slate-800">{configTienda?.binance_pay_email || "pagos@ocumarehub.com"}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Referencia de Pago y Subida de Capture */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                  Número de Referencia de Pago:
+                </label>
+                <input
+                  type="text"
+                  value={referenciaPago}
+                  onChange={(e) => setReferenciaPago(e.target.value)}
+                  placeholder="Ej: 123456 o 009871"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-[#064E3B]/20 focus:border-[#064E3B] outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                  Capture del Pago (Opcional):
+                </label>
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    id="comprobanteFileInput"
+                  />
+                  <label
+                    htmlFor="comprobanteFileInput"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-dashed border-slate-300 hover:border-[#064E3B] bg-stone-50 hover:bg-stone-100 cursor-pointer flex items-center justify-center gap-2 text-xs font-semibold text-slate-600 transition-colors"
+                  >
+                    {subiendoComprobante ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#064E3B]" />
+                    ) : comprobanteUrl ? (
+                      <FileCheck2 className="w-3.5 h-3.5 text-green-600" />
+                    ) : (
+                      <UploadCloud className="w-3.5 h-3.5 text-slate-400" />
+                    )}
+                    <span className="truncate">
+                      {subiendoComprobante ? "Subiendo..." : comprobanteUrl ? "¡Comprobante Adjunto!" : "Subir Capture"}
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            {uploadError && <span className="text-[11px] text-red-600 font-semibold">{uploadError}</span>}
           </div>
 
-          {/* Notas */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-              Indicaciones adicionales (Opcional)
-            </label>
-            <textarea
-              rows={2}
-              value={notas}
-              onChange={(e) => setNotas(e.target.value)}
-              placeholder="Detalles de tallas, colores o especificaciones del encargo..."
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-cyan-500"
-            />
-          </div>
-
-          {/* Botones de acción */}
-          <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => setIsCheckoutOpen(false)}
-              disabled={loading || subiendoComprobante}
-              className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs font-semibold transition-colors"
-            >
-              Volver
-            </button>
+          {/* Botón de Confirmación */}
+          <div className="pt-2 border-t border-slate-100">
             <button
               type="submit"
-              disabled={loading || subiendoComprobante}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-bold text-xs sm:text-sm shadow-lg shadow-emerald-500/20 active:scale-95 transition-all disabled:opacity-50"
+              disabled={loading}
+              className="w-full py-4 px-6 rounded-2xl bg-[#84CC16] hover:bg-[#65A30D] text-[#14532D] font-display font-black text-sm flex items-center justify-center gap-2 shadow-xl shadow-[#84CC16]/25 hover:scale-[1.01] active:scale-95 transition-all disabled:opacity-60"
             >
               {loading ? (
-                <RefreshCw className="w-4 h-4 animate-spin" />
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Procesando y generando orden...</span>
+                </>
               ) : (
-                <ShieldCheck className="w-4 h-4" />
+                <>
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Confirmar y Reservar Encargo ({formatoUSD(montoPagarUSD)})</span>
+                </>
               )}
-              <span>{loading ? "Creando Orden..." : "Confirmar Encargo"}</span>
             </button>
+            <p className="text-[11px] text-slate-400 text-center mt-2">
+              🔒 Al confirmar, serás redirigido al rastreo en vivo y chat P2P con el vendedor.
+            </p>
           </div>
         </form>
       </div>

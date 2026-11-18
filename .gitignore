@@ -32,6 +32,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# stitch reference
+_stitch_reference
+_stitch_reference/
+
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
