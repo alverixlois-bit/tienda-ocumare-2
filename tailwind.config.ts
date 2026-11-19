@@ -61,6 +61,15 @@ const config: Config = {
       },
     },
   },
+  safelist: [
+    // Avatar colors used dynamically in reviews section
+    "bg-purple-600",
+    "bg-blue-600",
+    "bg-rose-600",
+    "bg-amber-600",
+    "bg-green-600",
+    "bg-indigo-600",
+  ],
   plugins: [],
 };
 

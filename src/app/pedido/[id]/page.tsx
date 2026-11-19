@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -17,6 +17,7 @@ import {
   KeyRound,
   Copy,
   Check,
+  Printer,
 } from "lucide-react";
 import { OrdenRow, OrdenItemRow } from "@/types/database.types";
 import { createClient } from "@/lib/supabase/client";
@@ -41,8 +42,23 @@ export default function PedidoPage() {
   const [configTienda, setConfigTienda] = useState<ConfiguracionTiendaData | null>(null);
   const [loading, setLoading] = useState(true);
   const [mostrarComprobante, setMostrarComprobante] = useState(false);
+  const qrPrintRef = useRef<HTMLCanvasElement>(null);
 
   const supabase = createClient();
+
+  // Generar QR para impresión cuando la orden esté disponible
+  useEffect(() => {
+    if (!orden?.numero || !qrPrintRef.current) return;
+    const qrUrl = `${window.location.origin}/pedido/${orden.numero}`;
+    import("qrcode").then((QRCode) => {
+      QRCode.toCanvas(qrPrintRef.current!, qrUrl, {
+        width: 128,
+        margin: 1,
+        color: { dark: "#0F172A", light: "#FFFFFF" },
+        errorCorrectionLevel: "M",
+      }).catch(console.warn);
+    });
+  }, [orden?.numero]);
 
   useEffect(() => {
     if (!orderId) return;
@@ -292,10 +308,18 @@ export default function PedidoPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={() => window.print()}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-white border border-slate-700 hover:bg-slate-700 transition-all flex items-center gap-1.5 print:hidden"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Imprimir PDF</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setMostrarComprobante(true)}
               className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#064E3B] text-[#84CC16] border border-[#0D6E53] hover:bg-[#0D6E53] transition-all flex items-center gap-1.5"
             >
-              <span>🧾 Comprobante &amp; QR</span>
+              <span>🧾 Comprobante & QR</span>
             </button>
             <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wide">
               {orden.estado}
@@ -493,6 +517,20 @@ export default function PedidoPage() {
           </div>
         </div>
       </main>
+
+      {/* ✅ Bloque de QR imprimible — visible solo en @media print */}
+      <div className="hidden print:block mx-auto max-w-xs text-center py-6 space-y-2">
+        <p className="font-bold text-slate-900 text-sm">Código QR de Verificación</p>
+        <div className="flex justify-center">
+          <canvas ref={qrPrintRef} className="rounded-xl border border-slate-200" />
+        </div>
+        <p className="text-xs text-slate-500 font-mono break-all">
+          /pedido/{orden.numero}
+        </p>
+        <p className="text-[10px] text-slate-400">
+          Escanea para verificar autenticidad del encargo en tiempo real.
+        </p>
+      </div>
 
       {/* Footer */}
       <footer className="border-t border-slate-900 py-4 text-center text-xs text-slate-500">

@@ -1,29 +1,52 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
-  ShoppingBag,
-  Search,
-  Filter,
-  RefreshCw,
-  MessageSquare,
-  Truck,
-  CheckCircle,
-  Clock,
-  AlertCircle,
-  User,
-  Phone,
-  Calendar,
-  DollarSign,
-  ChevronRight,
+  X, ShoppingBag, ShieldCheck, Truck, Clock, CheckCircle,
+  Copy, Check, MessageCircle, ChevronDown,
 } from "lucide-react";
 import { OrdenRow, EstadoOrden } from "@/types/database.types";
 import { createClient } from "@/lib/supabase/client";
-import { ChatDrawer } from "./ChatDrawer";
 import { formatoUSD, formatoVES } from "@/utils/currency";
+import { ChatDrawer } from "./ChatDrawer";
+import { actualizarEstadoOrdenAction } from "@/actions/orders";
 
 interface OrdersTabProps {
   showToast: (msg: string, type: "success" | "error" | "info") => void;
+}
+
+type FaseRapida = {
+  estado: EstadoOrden;
+  label: string;
+  color: string;
+  icon: React.ElementType;
+};
+
+const FASES: FaseRapida[] = [
+  { estado: "pendiente", label: "Pendiente", color: "bg-amber-500/15 text-amber-400 border-amber-500/30", icon: Clock },
+  { estado: "abono_verificado", label: "Verificado", color: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", icon: CheckCircle },
+  { estado: "despachado", label: "En Tránsito", color: "bg-cyan-500/15 text-cyan-400 border-cyan-500/30", icon: Truck },
+  { estado: "entregado", label: "Entregado", color: "bg-purple-500/15 text-purple-400 border-purple-500/30", icon: ShieldCheck },
+];
+
+function generarMensajeGuia(orden: OrdenRow, empresa: string): string {
+  const nombre = orden.cliente_nombre || "Cliente";
+  const num = orden.numero || "N/A";
+  const pin = (orden as any).pin_entrega || "****";
+  const metodo = (orden.metodo_entrega || "").toUpperCase();
+
+  if (empresa === "personal") {
+    return `📦 *Encargos Boutique — Aviso de Entrega Personal*\n\nHola ${nombre} 👋\n\nTu encargo *#${num}* está listo para retiro.\n\n📍 *Punto Seguro Acordado*\n🔐 *PIN de Entrega:* \`${pin}\`\n\n✅ Presenta este PIN al momento del intercambio para validar tu identidad.\n\n¡Gracias por tu confianza! 🙏`;
+  }
+
+  const empresaMap: Record<string, { link: string; emoji: string }> = {
+    Zoom: { link: "https://zoom.com.ve/", emoji: "🟡" },
+    MRW: { link: "https://mrw.com.ve/", emoji: "🔵" },
+    Tealca: { link: "https://www.tealca.com/", emoji: "🟠" },
+  };
+  const info = empresaMap[empresa] || { link: "", emoji: "📦" };
+
+  return `${info.emoji} *Encargos Boutique — Despacho Confirmado*\n\nHola *${nombre}* 👋\n\nTu encargo *#${num}* ha sido *despachado por ${empresa}*.\n\n📋 *Número de Guía:* (ver confirmación de agencia)\n🚚 *Empresa:* ${empresa}\n🔗 *Rastrear:* ${info.link}\n\n⏳ Tiempo estimado: 2-5 días hábiles según zona.\n\nCuando llegue al punto de entrega te avisamos con tu *PIN secreto* 🔐.\n\n¡Gracias por confiar en Encargos Boutique! 🛍️`;
 }
 
 export function OrdersTab({ showToast }: OrdersTabProps) {
@@ -32,343 +55,246 @@ export function OrdersTab({ showToast }: OrdersTabProps) {
   const [filtroEstado, setFiltroEstado] = useState<string>("all");
   const [search, setSearch] = useState("");
 
-  // Drawer de Chat y Verificación P2P
   const [ordenSeleccionada, setOrdenSeleccionada] = useState<OrdenRow | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
+  // Estado para el generador de mensaje de guía
+  const [guiaOrden, setGuiaOrden] = useState<OrdenRow | null>(null);
+  const [guiaEmpresa, setGuiaEmpresa] = useState<string>("Zoom");
+  const [guiaMensaje, setGuiaMensaje] = useState<string>("");
+  const [guiaCopiado, setGuiaCopiado] = useState(false);
+
+  // Estado para cambio rápido de estado
+  const [cambiandoEstado, setCambiandoEstado] = useState<string | null>(null);
+
   const supabase = createClient();
 
-  useEffect(() => {
+  React.useEffect(() => {
     cargarOrdenes();
-
-    // Suscripción Realtime a cambios en órdenes y pedidos
     const channel = supabase
       .channel("ordenes_realtime_admin")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "ordenes" },
-        () => {
-          cargarOrdenes();
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "pedidos" },
-        () => {
-          cargarOrdenes();
-        }
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "ordenes" }, () => cargarOrdenes())
+      .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, () => cargarOrdenes())
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   async function cargarOrdenes() {
     setLoading(true);
     try {
       const tiendaId = process.env.NEXT_PUBLIC_TIENDA_ID || "11111111-1111-4111-8111-111111111111";
-
-      // 1. Probar consulta en ordenes
-      const { data: ordenesData } = await supabase
-        .from("ordenes")
-        .select("*")
-        .order("created_at", { ascending: false });
-
+      const { data: ordenesData } = await supabase.from("ordenes").select("*").order("created_at", { ascending: false });
       if (ordenesData && ordenesData.length > 0) {
         setOrdenes(ordenesData);
       } else {
-        // 2. Fallback a tabla pedidos existente en Supabase
-        const { data: pedidosData } = await supabase
-          .from("pedidos")
-          .select("*")
-          .order("created_at", { ascending: false });
-
+        const { data: pedidosData } = await supabase.from("pedidos").select("*").order("created_at", { ascending: false });
         if (pedidosData && pedidosData.length > 0) {
           const mapped: OrdenRow[] = pedidosData.map((p) => ({
-            id: p.id,
-            numero: (p as any).numero_orden || (p as any).numero || `PED-${p.id.slice(0, 8).toUpperCase()}`,
-            tienda_id: tiendaId,
-            cliente_id: null,
-            cliente_nombre: p.cliente_nombre,
-            cliente_telefono: p.cliente_telefono,
-            cliente_email: null,
+            id: p.id, numero: (p as any).numero_orden || `PED-${p.id.slice(0, 8).toUpperCase()}`,
+            tienda_id: tiendaId, cliente_id: null,
+            cliente_nombre: p.cliente_nombre, cliente_telefono: p.cliente_telefono, cliente_email: null,
             direccion_entrega: p.agencia_envio,
             metodo_entrega: ((p.agencia_envio || "").toLowerCase().includes("mrw") ? "mrw" : "zoom") as "zoom" | "mrw",
-            modalidad_pago: "abono",
-            estado: (p.estado_pago || "pendiente") as EstadoOrden,
-            moneda_base: "USD",
-            tasa_cambio_bcv: "52.50",
-            subtotal_usd: "0.00",
-            total_usd: "0.00",
-            total_ves_exacto: "0.00",
-            total_ves: "0.00",
-            monto_inicial_usd: "0.00",
-            monto_inicial_ves: "0.00",
-            saldo_pendiente_usd: "0.00",
-            saldo_pendiente_ves: "0.00",
-            redondeo_ves_entero: false,
-            comprobante_url: p.comprobante_url || null,
+            modalidad_pago: "abono", estado: (p.estado_pago || "pendiente") as EstadoOrden,
+            moneda_base: "USD", tasa_cambio_bcv: "52.50",
+            subtotal_usd: "0.00", total_usd: "0.00", total_ves_exacto: "0.00", total_ves: "0.00",
+            monto_inicial_usd: "0.00", monto_inicial_ves: "0.00",
+            saldo_pendiente_usd: "0.00", saldo_pendiente_ves: "0.00",
+            redondeo_ves_entero: false, comprobante_url: p.comprobante_url || null,
             referencia_pago: p.referencia_pago || null,
             notas: `C.I: ${p.cliente_cedula}${p.referencia_pago ? ` | Ref: ${p.referencia_pago}` : ""}`,
-            created_at: p.created_at || new Date().toISOString(),
-            updated_at: p.created_at || new Date().toISOString(),
+            created_at: p.created_at || new Date().toISOString(), updated_at: p.created_at || new Date().toISOString(),
           }));
           setOrdenes(mapped);
-        } else {
-          setOrdenes([]);
-        }
+        } else { setOrdenes([]); }
       }
     } catch (err) {
       console.error("Error al cargar pedidos:", err);
-      showToast("Error al sincronizar pedidos de Supabase", "error");
+      showToast("Error al sincronizar pedidos", "error");
+    } finally { setLoading(false); }
+  }
+
+  async function handleCambiarEstado(ordenId: string, nuevoEstado: EstadoOrden) {
+    setCambiandoEstado(ordenId);
+    try {
+      const res = await actualizarEstadoOrdenAction(ordenId, nuevoEstado, "@admin");
+      if (res.success) {
+        showToast(`Estado actualizado a: ${nuevoEstado}`, "success");
+        cargarOrdenes();
+      } else {
+        showToast(res.error || "Error al cambiar estado", "error");
+      }
+    } catch {
+      showToast("Error de conexión", "error");
     } finally {
-      setLoading(false);
+      setCambiandoEstado(null);
     }
   }
 
-  function abrirChat(orden: OrdenRow) {
-    setOrdenSeleccionada(orden);
-    setIsDrawerOpen(true);
+  function abrirGeneradorGuia(orden: OrdenRow) {
+    setGuiaOrden(orden);
+    setGuiaEmpresa("Zoom");
+    setGuiaMensaje(generarMensajeGuia(orden, "Zoom"));
   }
 
-  function handleOrderUpdated() {
-    cargarOrdenes();
-    if (ordenSeleccionada) {
-      // Refrescar orden seleccionada
-      supabase
-        .from("ordenes")
-        .select("*")
-        .eq("id", ordenSeleccionada.id)
-        .single()
-        .then(({ data }) => {
-          if (data) setOrdenSeleccionada(data);
-        });
-    }
+  function handleEmpresaGuiaChange(empresa: string) {
+    setGuiaEmpresa(empresa);
+    if (guiaOrden) setGuiaMensaje(generarMensajeGuia(guiaOrden, empresa));
   }
 
-  // Filtrado seguro
+  function handleCopiarGuia() {
+    navigator.clipboard.writeText(guiaMensaje);
+    setGuiaCopiado(true);
+    setTimeout(() => setGuiaCopiado(false), 2000);
+  }
+
+  function handleEnviarWhatsApp() {
+    if (!guiaOrden) return;
+    const tel = (guiaOrden.cliente_telefono || "").replace(/\D/g, "");
+    const url = `https://api.whatsapp.com/send?phone=${tel || "584129998877"}&text=${encodeURIComponent(guiaMensaje)}`;
+    window.open(url, "_blank");
+  }
+
   const listaOrdenes = Array.isArray(ordenes) ? ordenes : [];
   const searchLower = (search || "").toLowerCase().trim();
-
   const filteredOrdenes = listaOrdenes.filter((o) => {
     if (!o) return false;
-    const num = (o.numero || "").toLowerCase();
-    const cliente = (o.cliente_nombre || "").toLowerCase();
-    const telf = (o.cliente_telefono || "");
-
     const matchesSearch =
       searchLower === "" ||
-      num.includes(searchLower) ||
-      cliente.includes(searchLower) ||
-      telf.includes(searchLower);
-
+      (o.numero || "").toLowerCase().includes(searchLower) ||
+      (o.cliente_nombre || "").toLowerCase().includes(searchLower) ||
+      (o.cliente_telefono || "").includes(searchLower);
     const matchesEstado =
-      filtroEstado === "all" ||
-      o.estado === filtroEstado ||
+      filtroEstado === "all" || o.estado === filtroEstado ||
       (filtroEstado === "pendiente_abono" && (o.estado === "pendiente" || o.estado === "pendiente_abono")) ||
       (filtroEstado === "abono_verificado" && (o.estado === "pagada" || o.estado === "abono_verificado")) ||
       (filtroEstado === "en_preparacion" && (o.estado === "procesando" || o.estado === "en_preparacion")) ||
       (filtroEstado === "entregado" && (o.estado === "completada" || o.estado === "entregado"));
-
     return matchesSearch && matchesEstado;
   });
 
-  // Helper de badges por estado
-  function renderBadgeEstado(estado: EstadoOrden) {
-    switch (estado) {
-      case "pendiente":
-      case "pendiente_abono":
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-            <Clock className="w-3.5 h-3.5" />
-            Pendiente Abono
-          </span>
-        );
-      case "pagada":
-      case "abono_verificado":
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <CheckCircle className="w-3.5 h-3.5" />
-            Abono Verificado
-          </span>
-        );
-      case "procesando":
-      case "en_preparacion":
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
-            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            En Preparación
-          </span>
-        );
-      case "despachado":
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-            <Truck className="w-3.5 h-3.5" />
-            Despachado
-          </span>
-        );
-      case "completada":
-      case "entregado":
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
-            <CheckCircle className="w-3.5 h-3.5" />
-            Entregado
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-400">
-            {estado}
-          </span>
-        );
-    }
+  function renderBadge(estado: EstadoOrden) {
+    const fase = FASES.find((f) => f.estado === estado || (estado === "pendiente_abono" && f.estado === "pendiente") || (estado === "pagada" && f.estado === "abono_verificado") || (estado === "completada" && f.estado === "entregado"));
+    if (!fase) return <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-400 border border-slate-700">{estado}</span>;
+    const Icon = fase.icon;
+    return (
+      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${fase.color}`}>
+        <Icon className="w-3 h-3" /> {fase.label}
+      </span>
+    );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Barra de Filtros */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+    <div className="space-y-5">
+      {/* Filtros */}
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3.5" />
+          <ShoppingBag className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
           <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            type="text" value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por # Orden, cliente o teléfono..."
             className="w-full pl-9 pr-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-cyan-500 transition-colors"
           />
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={filtroEstado}
-            onChange={(e) => setFiltroEstado(e.target.value)}
-            className="px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-medium focus:outline-none focus:border-cyan-500"
-          >
-            <option value="all">Todos los estados</option>
-            <option value="pendiente_abono">Pendiente Abono 50%</option>
-            <option value="abono_verificado">Abono Verificado</option>
-            <option value="en_preparacion">En Preparación</option>
-            <option value="despachado">Despachado</option>
-            <option value="entregado">Entregado / Completado</option>
-          </select>
-
-          <button
-            onClick={cargarOrdenes}
-            title="Refrescar pedidos"
-            className="p-2.5 bg-slate-900 border border-slate-700 rounded-xl text-slate-300 hover:text-white transition-colors"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          </button>
-        </div>
+        <select
+          value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)}
+          className="px-3 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-cyan-500"
+        >
+          <option value="all">Todos los estados</option>
+          <option value="pendiente_abono">Pendiente Abono</option>
+          <option value="abono_verificado">Abono Verificado</option>
+          <option value="en_preparacion">En Preparación</option>
+          <option value="despachado">Despachado</option>
+          <option value="entregado">Entregado</option>
+        </select>
       </div>
 
-      {/* Lista de Pedidos */}
+      {/* Lista */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-          <RefreshCw className="w-8 h-8 animate-spin mb-3 text-cyan-400" />
-          <p className="text-sm">Sincronizando monitor de pedidos...</p>
+          <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin mb-3" />
+          <p className="text-sm">Sincronizando pedidos...</p>
         </div>
       ) : filteredOrdenes.length === 0 ? (
-        <div className="text-center py-16 px-4 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl">
+        <div className="text-center py-16 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl">
           <ShoppingBag className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-          <h3 className="text-base font-semibold text-white">No hay órdenes para mostrar</h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-            {search || filtroEstado !== "all"
-              ? "No hay pedidos que coincidan con los filtros seleccionados."
-              : "Los encargos realizados por los compradores aparecerán aquí en tiempo real."}
-          </p>
+          <h3 className="text-base font-semibold text-white">No hay órdenes</h3>
+          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">Los encargos aparecerán aquí en tiempo real.</p>
         </div>
       ) : (
         <div className="space-y-3">
           {filteredOrdenes.map((orden) => {
-            const tieneComprobante = Boolean(orden.comprobante_url);
             const esAbono = orden.modalidad_pago === "abono";
-
             return (
               <div
                 key={orden.id}
-                onClick={() => abrirChat(orden)}
-                className="p-4 sm:p-5 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-cyan-500/40 cursor-pointer transition-all duration-200 backdrop-blur group flex flex-col md:flex-row md:items-center justify-between gap-4"
+                className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition-all space-y-3"
               >
-                {/* Columna Izquierda: Datos del Pedido y Cliente */}
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-cyan-400 group-hover:scale-105 transition-transform shrink-0">
-                    <ShoppingBag className="w-6 h-6" />
+                {/* Row Superior */}
+                <div
+                  className="flex items-start gap-3 cursor-pointer"
+                  onClick={() => { setOrdenSeleccionada(orden); setIsDrawerOpen(true); }}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-cyan-400 shrink-0">
+                    <ShoppingBag className="w-5 h-5" />
                   </div>
-
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="font-mono font-bold text-white text-base">
-                        #{orden.numero}
-                      </span>
-                      {renderBadgeEstado(orden.estado)}
-                      {tieneComprobante && (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                          CAPTURE ADJUNTO
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                      <span className="font-mono font-bold text-white">#{orden.numero}</span>
+                      {renderBadge(orden.estado)}
+                      {orden.comprobante_url && (
+                        <span className="text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.5 rounded">
+                          CAPTURE
                         </span>
                       )}
                     </div>
-
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
-                      <span className="flex items-center gap-1 text-slate-300 font-medium">
-                        <User className="w-3.5 h-3.5 text-slate-400" />
-                        {orden.cliente_nombre}
-                      </span>
-                      {orden.cliente_telefono && (
-                        <span className="flex items-center gap-1">
-                          <Phone className="w-3.5 h-3.5 text-slate-400" />
-                          {orden.cliente_telefono}
-                        </span>
-                      )}
-                      <span className="flex items-center gap-1">
-                        <Truck className="w-3.5 h-3.5 text-cyan-400" />
-                        Agencia: <strong className="text-white uppercase">{orden.metodo_entrega}</strong>
-                      </span>
-                      <span className="flex items-center gap-1 font-mono text-[11px] text-slate-500">
-                        <Calendar className="w-3.5 h-3.5" />
-                        {new Date(orden.created_at).toLocaleDateString("es-VE")}
-                      </span>
-                    </div>
+                    <span className="text-xs text-slate-400">{orden.cliente_nombre} · {orden.cliente_telefono}</span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="font-mono font-bold text-emerald-400 text-sm block">
+                      {formatoUSD(esAbono ? orden.monto_inicial_usd : orden.total_usd)}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {formatoVES(esAbono ? orden.monto_inicial_ves : orden.total_ves)}
+                    </span>
                   </div>
                 </div>
 
-                {/* Columna Derecha: Finanzas y Botón P2P */}
-                <div className="flex items-center justify-between md:justify-end gap-6 border-t md:border-t-0 pt-3 md:pt-0 border-slate-800">
-                  <div className="text-left md:text-right">
-                    <div className="flex items-center md:justify-end gap-1.5">
-                      <span className="text-xs text-slate-400 font-medium">
-                        {esAbono ? "Abono 50% Requerido:" : "Total a Cobrar:"}
-                      </span>
-                      <span className="text-base font-extrabold text-emerald-400 font-mono">
-                        {formatoUSD(esAbono ? orden.monto_inicial_usd : orden.total_usd)}
-                      </span>
-                    </div>
+                {/* ✅ PILLS DE ESTADO RÁPIDO */}
+                <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800">
+                  {FASES.map((fase) => {
+                    const isCurrent = orden.estado === fase.estado ||
+                      (fase.estado === "pendiente" && orden.estado === "pendiente_abono") ||
+                      (fase.estado === "abono_verificado" && orden.estado === "pagada") ||
+                      (fase.estado === "entregado" && orden.estado === "completada");
+                    const Icon = fase.icon;
+                    return (
+                      <button
+                        key={fase.estado}
+                        type="button"
+                        disabled={isCurrent || cambiandoEstado === orden.id}
+                        onClick={() => handleCambiarEstado(orden.id, fase.estado)}
+                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all ${
+                          isCurrent
+                            ? `${fase.color} cursor-default`
+                            : "bg-slate-900 text-slate-500 border-slate-800 hover:border-slate-600 hover:text-slate-300"
+                        }`}
+                      >
+                        <Icon className="w-3 h-3" />
+                        {fase.label}
+                        {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />}
+                      </button>
+                    );
+                  })}
 
-                    <span className="text-xs text-slate-400 font-mono block">
-                      {formatoVES(esAbono ? orden.monto_inicial_ves : orden.total_ves)} (Tasa: {parseFloat(orden.tasa_cambio_bcv || "0").toFixed(2)})
-                    </span>
-
-                    {esAbono && (
-                      <span className="text-[11px] text-amber-400/80 block mt-0.5">
-                        Saldo restante: {formatoUSD(orden.saldo_pendiente_usd)} al entregar
-                      </span>
-                    )}
-                  </div>
-
+                  {/* Botón generador WhatsApp */}
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      abrirChat(orden);
-                    }}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-cyan-600 hover:text-white text-slate-300 font-semibold text-xs border border-slate-700 hover:border-cyan-500 transition-all shadow-sm"
+                    onClick={(e) => { e.stopPropagation(); abrirGeneradorGuia(orden); }}
+                    className="ml-auto flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border border-[#25D366]/30 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20 transition-all"
                   >
-                    <MessageSquare className="w-4 h-4 text-cyan-400 group-hover:text-white" />
-                    <span>Chat P2P</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
+                    <MessageCircle className="w-3 h-3" />
+                    Msg WhatsApp
                   </button>
                 </div>
               </div>
@@ -377,14 +303,89 @@ export function OrdersTab({ showToast }: OrdersTabProps) {
         </div>
       )}
 
-      {/* Drawer lateral de Chat P2P y Verificación de Comprobante */}
+      {/* Chat Drawer */}
       <ChatDrawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         orden={ordenSeleccionada}
-        onOrderUpdated={handleOrderUpdated}
+        onOrderUpdated={cargarOrdenes}
         showToast={showToast}
       />
+
+      {/* ✅ MODAL GENERADOR DE MENSAJE WHATSAPP */}
+      {guiaOrden && (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="w-full sm:max-w-md bg-[#0B1320] border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden">
+            <div className="sm:hidden flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 rounded-full bg-slate-700" />
+            </div>
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+              <span className="font-display font-bold text-sm text-white">
+                📱 Mensaje de Despacho — #{guiaOrden.numero}
+              </span>
+              <button
+                type="button"
+                onClick={() => setGuiaOrden(null)}
+                className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Selector de empresa */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Vía / Método:</label>
+                <div className="flex flex-wrap gap-2">
+                  {["Zoom", "MRW", "Tealca", "personal"].map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      onClick={() => handleEmpresaGuiaChange(e)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                        guiaEmpresa === e
+                          ? "bg-[#064E3B] text-[#84CC16] border-[#84CC16]/40"
+                          : "bg-slate-900 text-slate-400 border-slate-700 hover:border-slate-500"
+                      }`}
+                    >
+                      {e === "personal" ? "📍 Personal" : e}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Vista del mensaje */}
+              <textarea
+                value={guiaMensaje}
+                onChange={(e) => setGuiaMensaje(e.target.value)}
+                rows={8}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl text-slate-200 text-xs p-3 font-mono resize-none focus:outline-none focus:border-[#25D366]"
+              />
+              {/* Acciones */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopiarGuia}
+                  className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs border transition-all ${
+                    guiaCopiado
+                      ? "bg-emerald-900/30 text-emerald-400 border-emerald-500/30"
+                      : "bg-slate-900 text-slate-300 border-slate-700 hover:border-slate-500"
+                  }`}
+                >
+                  {guiaCopiado ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {guiaCopiado ? "¡Copiado!" : "Copiar"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEnviarWhatsApp}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs bg-[#25D366] text-slate-950 hover:bg-[#20BD5A] transition-all"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Abrir WhatsApp
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -21,6 +21,7 @@ import {
   Send,
   Share2,
   FileText,
+  Store,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { OrdenRow } from "@/types/database.types";
@@ -266,11 +267,48 @@ export function CentroMandoTab({
     return true;
   });
 
+  // ✅ Prueba de Sonido con Web Audio API (sin archivos externos)
+  function reproducirDing() {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.6, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.5);
+    } catch (e) {
+      console.warn("Web Audio no disponible:", e);
+    }
+  }
+
   return (
-    <div className="space-y-6">
-      
-      {/* 1. Header KPIs en Tiempo Real */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="space-y-5">
+
+      {/* Alerta visual de pagos recientes */}
+      {ordenesPorVerificar > 0 && (
+        <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 animate-pulse-slow">
+          <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+          <span className="text-xs font-bold text-amber-300">
+            🔔 {ordenesPorVerificar} {ordenesPorVerificar === 1 ? "orden pendiente" : "órdenes pendientes"} de verificación de pago
+          </span>
+          <button
+            type="button"
+            onClick={reproducirDing}
+            className="ml-auto px-2.5 py-1 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-300 font-bold text-[11px] hover:bg-amber-500/30 transition-all flex items-center gap-1"
+          >
+            🔔 Prueba Sonido
+          </button>
+        </div>
+      )}
+
+      {/* 1. Header KPIs — 2 columnas en móvil, 4 en desktop */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="p-5 rounded-3xl bg-slate-900/90 border border-slate-800 text-white shadow-sm flex items-center justify-between">
           <div>
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -341,6 +379,37 @@ export function CentroMandoTab({
             <TrendingUp className="w-6 h-6" />
           </div>
         </div>
+      </div>
+
+      {/* Acceso rápido a Tienda Pública */}
+      <div className="flex items-center gap-2">
+        <a
+          href="/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-[#84CC16]/40 text-slate-300 hover:text-[#84CC16] text-xs font-bold transition-all"
+        >
+          <Store className="w-3.5 h-3.5" />
+          Ver Tienda Pública
+        </a>
+        <a
+          href="/catalogo/pdf"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-cyan-400/40 text-slate-300 hover:text-cyan-400 text-xs font-bold transition-all"
+        >
+          <FileText className="w-3.5 h-3.5" />
+          Catálogo PDF
+        </a>
+        {!ordenesPorVerificar && (
+          <button
+            type="button"
+            onClick={reproducirDing}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-400 text-xs font-bold transition-all"
+          >
+            🔔 Prueba Sonido
+          </button>
+        )}
       </div>
 
       {/* 2. Grid Central: Tasa BCV Override y Agenda de Entregas Personales de Hoy */}

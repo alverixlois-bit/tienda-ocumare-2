@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, Instrument_Sans } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/context/CartContext";
@@ -19,7 +19,15 @@ const instrumentSans = Instrument_Sans({
 
 export const metadata: Metadata = {
   title: "Encargos Boutique | Tienda Online por Encargo y Despachos",
-  description: "Boutique digital de compras por encargo en Venezuela. Envíos nacionales y entregas personales con abono del 50%, tasa oficial BCV y seguimiento en vivo.",
+  description:
+    "Boutique digital de compras por encargo en Venezuela. Envíos nacionales y entregas personales con abono del 50%, tasa oficial BCV y seguimiento en vivo.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -29,7 +37,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" className={`${plusJakarta.variable} ${instrumentSans.variable}`}>
-      <body className="antialiased min-h-screen bg-[#FAFAF9] text-slate-900 font-sans selection:bg-[#84CC16]/30">
+      <body className="antialiased min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-[#FAFAF9] text-slate-900 font-sans selection:bg-[#84CC16]/30">
         <CartProvider>{children}</CartProvider>
       </body>
     </html>
