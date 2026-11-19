@@ -15,9 +15,10 @@ import {
   Film,
   Link2,
   Loader2,
+  Plus,
 } from "lucide-react";
 import { ProductoRow, CategoriaRow } from "@/types/database.types";
-import { convertirUsdaVes, formatoVES, sanitizarNumero } from "@/utils/currency";
+import { sanitizarNumero } from "@/utils/currency";
 import { guardarProducto } from "@/actions/products";
 import { obtenerCategorias } from "@/actions/categories";
 import { createClient } from "@/lib/supabase/client";
@@ -70,6 +71,8 @@ export function ProductModal({
   const [descripcion, setDescripcion] = useState("");
   const [categoriaId, setCategoriaId] = useState<string>("");
   const [precioBase, setPrecioBase] = useState("");
+  const [precioVesInput, setPrecioVesInput] = useState("");
+  const [editandoVes, setEditandoVes] = useState(false);
   const [unidadMedida, setUnidadMedida] = useState("unidad");
   const [stock, setStock] = useState("10");
   const [imagenUrl, setImagenUrl] = useState("");
@@ -86,6 +89,9 @@ export function ProductModal({
 
   // Blindaje y carga dinámica de categorías disponibles
   const [listaCategorias, setListaCategorias] = useState<CategoriaRow[]>([]);
+  const [mostrarNuevaCat, setMostrarNuevaCat] = useState(false);
+  const [nuevaCatNombre, setNuevaCatNombre] = useState("");
+  const [guardandoCat, setGuardandoCat] = useState(false);
 
   useEffect(() => {
     if (Array.isArray(categorias) && categorias.length > 0) {
@@ -113,6 +119,9 @@ export function ProductModal({
           ? producto.precio_usd.toString()
           : "0.00")
       );
+      setPrecioVesInput(
+        (parseFloat(String(producto.precio_usd || producto.precio_base || 0)) * tasaBcv).toFixed(2)
+      );
       setUnidadMedida(producto.unidad_medida || "unidad");
       setStock(producto.stock ? producto.stock.toString() : "0");
       const img = producto.imagen_url || (producto.imagenes && producto.imagenes[0]) || "";
@@ -137,6 +146,7 @@ export function ProductModal({
       setDescripcion("");
       setCategoriaId("");
       setPrecioBase("");
+      setPrecioVesInput("");
       setUnidadMedida("unidad");
       setStock("10");
       setImagenUrl("");
@@ -146,8 +156,35 @@ export function ProductModal({
       setActivo(true);
       setModoImagen("upload");
       setModoVideo("upload");
+      setMostrarNuevaCat(false);
+      setNuevaCatNombre("");
     }
-  }, [producto, categorias, isOpen]);
+  }, [producto, categorias, isOpen, tasaBcv]);
+
+  async function handleCrearCategoria() {
+    if (!nuevaCatNombre.trim()) return;
+    setGuardandoCat(true);
+    try {
+      const fd = new FormData();
+      fd.append("nombre", nuevaCatNombre.trim());
+      fd.append("orden", "99");
+      const { crearCategoria } = await import("@/actions/categories");
+      const res = await crearCategoria(fd);
+      if (res.success && res.categoria) {
+        setListaCategorias((prev) => [...prev, res.categoria!]);
+        setCategoriaId(res.categoria.id);
+        setNuevaCatNombre("");
+        setMostrarNuevaCat(false);
+        showToast("Categoría creada exitosamente", "success");
+      } else {
+        showToast(res.error || "Error al crear categoría", "error");
+      }
+    } catch (e) {
+      showToast("Error inesperado al crear categoría", "error");
+    } finally {
+      setGuardandoCat(false);
+    }
+  }
 
   if (!isOpen) return null;
 
@@ -295,9 +332,6 @@ export function ProductModal({
     }
   }
 
-  const precioNumCalculo = sanitizarNumero(precioBase, 0);
-  const precioVes = convertirUsdaVes(precioNumCalculo, tasaBcv);
-
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
       <div className="bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-2xl w-full sm:max-w-2xl my-0 sm:my-8 overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 max-h-[92dvh] flex flex-col">
@@ -318,7 +352,7 @@ export function ProductModal({
         </div>
 
         {/* Formulario */}
-        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
+        <form id="product-form" onSubmit={handleSubmit} className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-4">
           {/* Nombre / Título */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
@@ -383,19 +417,66 @@ export function ProductModal({
               <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
                 Categoría (Opcional)
               </label>
-              <select
-                value={categoriaId}
-                onChange={(e) => setCategoriaId(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-cyan-500 transition-colors"
-              >
-                <option value="">(Sin categoría asignada)</option>
-                {Array.isArray(listaCategorias) &&
-                  listaCategorias.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.nombre}
-                    </option>
-                  ))}
-              </select>
+              <div className="flex gap-2">
+                <select
+                  value={categoriaId}
+                  onChange={(e) => setCategoriaId(e.target.value)}
+                  className="flex-1 px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+                >
+                  <option value="">(Sin categoría asignada)</option>
+                  {Array.isArray(listaCategorias) &&
+                    listaCategorias.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.nombre}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setMostrarNuevaCat((v) => !v)}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 text-xs font-bold transition-colors flex items-center gap-1"
+                  title="Agregar nueva categoría"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Nueva
+                </button>
+              </div>
+              {mostrarNuevaCat && (
+                <div className="mt-2 flex gap-2">
+                  <input
+                    type="text"
+                    value={nuevaCatNombre}
+                    onChange={(e) => setNuevaCatNombre(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleCrearCategoria();
+                      }
+                    }}
+                    placeholder="Nombre de la nueva categoría"
+                    className="flex-1 px-3 py-2 bg-slate-950 border border-cyan-500/40 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCrearCategoria}
+                    disabled={guardandoCat || !nuevaCatNombre.trim()}
+                    className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-colors disabled:opacity-50"
+                  >
+                    {guardandoCat ? "..." : "Guardar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMostrarNuevaCat(false);
+                      setNuevaCatNombre("");
+                    }}
+                    className="px-3 py-2 rounded-lg bg-slate-700 text-slate-300 text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
             </div>
 
             <div>
@@ -443,7 +524,16 @@ export function ProductModal({
                   inputMode="decimal"
                   required
                   value={precioBase}
-                  onChange={(e) => setPrecioBase(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setPrecioBase(val);
+                    if (!editandoVes) {
+                      const num = parseFloat(val.replace(",", "."));
+                      if (!isNaN(num) && tasaBcv > 0) {
+                        setPrecioVesInput((num * tasaBcv).toFixed(2));
+                      }
+                    }
+                  }}
                   placeholder="0.00"
                   className="w-full pl-8 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-emerald-500"
                 />
@@ -452,10 +542,27 @@ export function ProductModal({
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                Equivalente BCV
+                Equivalente Bs. (BCV)
               </label>
-              <div className="py-2 px-3 bg-slate-900/50 border border-slate-800 rounded-lg text-emerald-400 font-mono text-sm font-semibold truncate">
-                {formatoVES(precioVes)}
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-amber-400 font-bold text-sm">Bs.</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={precioVesInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setPrecioVesInput(val);
+                    const num = parseFloat(val.replace(",", "."));
+                    if (!isNaN(num) && num > 0 && tasaBcv > 0) {
+                      setPrecioBase((num / tasaBcv).toFixed(2));
+                    }
+                  }}
+                  onFocus={() => setEditandoVes(true)}
+                  onBlur={() => setEditandoVes(false)}
+                  placeholder="0.00"
+                  className="w-full pl-10 pr-3 py-2 bg-slate-900 border border-amber-500/40 rounded-lg text-amber-400 font-mono text-sm focus:outline-none focus:border-amber-400"
+                />
               </div>
             </div>
 
@@ -727,21 +834,31 @@ export function ProductModal({
               <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
             </label>
           </div>
+        </form>
 
-          {/* Botones de acción */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+        {/* Sticky footer OUTSIDE the scrollable form */}
+        <div className="shrink-0 px-4 sm:px-6 py-3 border-t border-slate-800 bg-slate-900 flex items-center justify-between gap-3">
+          <p className="text-xs text-slate-500">
+            {saving
+              ? "Guardando..."
+              : producto
+              ? "Editando producto existente"
+              : "Nuevo producto"}
+          </p>
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={onClose}
-              disabled={saving || subiendoImagen || subiendoVideo}
+              disabled={saving}
               className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-sm font-medium transition-colors"
             >
               Cancelar
             </button>
             <button
               type="submit"
+              form="product-form"
               disabled={saving || subiendoImagen || subiendoVideo}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-semibold text-sm shadow-lg shadow-cyan-500/20 active:scale-95 transition-all disabled:opacity-50"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-semibold text-sm shadow-lg active:scale-95 transition-all disabled:opacity-50"
             >
               {saving ? (
                 <RefreshCw className="w-4 h-4 animate-spin" />
@@ -751,7 +868,7 @@ export function ProductModal({
               <span>{saving ? "Guardando..." : producto ? "Actualizar" : "Crear Producto"}</span>
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

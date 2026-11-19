@@ -497,16 +497,13 @@ export async function validarPinEntregaAction(
   }
 }
 
-/**
- * Envío de mensajes de chat (P2P o Interno)
- */
 export async function enviarMensajeChatAction({
   ordenId,
   remitente,
   mensaje,
   archivoUrl,
   tipoArchivo,
-  adminAlias = "Asesor de Ventas",
+  adminAlias = "Asesor",
 }: {
   ordenId: string;
   remitente: "cliente" | "admin";
@@ -519,8 +516,8 @@ export async function enviarMensajeChatAction({
     const supabase = await createClient();
     const nowIso = new Date().toISOString();
 
-    const payload = {
-      orden_id: ordenId,
+    // Payload con ambas variantes de columna — el resiliente loop descarta la que no exista
+    const payloadBase = {
       remitente,
       admin_alias: remitente === "admin" ? adminAlias : null,
       mensaje: mensaje?.trim() || null,
@@ -530,13 +527,34 @@ export async function enviarMensajeChatAction({
       created_at: nowIso,
     };
 
-    const { data, error } = await supabase
+    // Intentar con orden_id (TEXT) primero
+    let { data, error } = await supabase
       .from("mensajes_chat")
-      .insert([payload as any])
+      .insert([{ ...payloadBase, orden_id: ordenId } as any])
       .select()
       .maybeSingle();
 
+    // Si falla por orden_id, intentar con pedido_id (UUID cuando sea válido)
+    if (error && (error.message?.includes("orden_id") || error.message?.includes("pedido_id"))) {
+      const retryPayload: Record<string, any> = { ...payloadBase };
+      // Verificar si el ID parece un UUID
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ordenId);
+      if (isUUID) {
+        retryPayload.pedido_id = ordenId;
+      } else {
+        retryPayload.orden_id = ordenId;
+      }
+      const retry = await supabase
+        .from("mensajes_chat")
+        .insert([retryPayload as any])
+        .select()
+        .maybeSingle();
+      data = retry.data;
+      error = retry.error;
+    }
+
     if (error) {
+      console.warn("Error al enviar mensaje chat:", error.message);
       return { success: false, error: error.message };
     }
 

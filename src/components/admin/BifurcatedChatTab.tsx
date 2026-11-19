@@ -52,7 +52,7 @@ export function BifurcatedChatTab({
 }: BifurcatedChatTabProps) {
   const [activeMode, setActiveMode] = useState<"clientes" | "interno">("clientes");
   const [chatSeleccionadoId, setChatSeleccionadoId] = useState<string>(initialOrdenId || "");
-  const [adminAlias, setAdminAlias] = useState<string>("@carlos_ventas");
+  const [adminAlias, setAdminAlias] = useState<string>("@operador");
   const [busqueda, setBusqueda] = useState<string>("");
 
   const [listaClientes, setListaClientes] = useState<ChatItem[]>([]);
@@ -66,6 +66,20 @@ export function BifurcatedChatTab({
 
   useEffect(() => {
     cargarListaChats();
+    // Cargar alias real del admin autenticado
+    supabase.auth.getUser().then(({ data }) => {
+      const userId = data?.user?.id;
+      if (!userId) return;
+      (supabase as any)
+        .from("perfiles_admin")
+        .select("alias, nombre")
+        .eq("id", userId)
+        .maybeSingle()
+        .then(({ data: perfil }: { data: any }) => {
+          if (perfil?.alias) setAdminAlias(perfil.alias);
+          else if (perfil?.nombre) setAdminAlias(`@${perfil.nombre.split(' ')[0].toLowerCase()}`);
+        });
+    });
   }, []);
 
   useEffect(() => {
@@ -124,13 +138,12 @@ export function BifurcatedChatTab({
         .limit(20);
 
       if (ordenes && ordenes.length > 0) {
-        const chats: ChatItem[] = ordenes.map((o, idx) => ({
+        const chats: ChatItem[] = ordenes.map((o) => ({
           id: o.id,
-          titulo: `${o.cliente_nombre || "Cliente"} (#${o.numero})`,
+          titulo: `${o.cliente_nombre || "Cliente"} (#${o.numero || o.id.slice(0, 8)})`,
           subtitulo: `Estado: ${o.estado}`,
-          estadoBadge: idx % 2 === 0 ? "En Espera" : "Atendido",
-          atendidoPor: idx % 2 === 0 ? undefined : "@carlos_ventas",
-          ultimoMensaje: "Hola, ¿cómo va mi pedido?",
+          estadoBadge: (o.estado === "pendiente" || o.estado === "pendiente_abono") ? "En Espera" : "Atendido" as "En Espera" | "Atendido",
+          ultimoMensaje: "Chat en tiempo real",
           hora: new Date(o.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }));
         setListaClientes(chats);

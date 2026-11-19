@@ -18,6 +18,7 @@ import {
   Menu,
   X,
   ShoppingBag,
+  User,
 } from "lucide-react";
 import { CentroMandoTab } from "@/components/admin/CentroMandoTab";
 import { BifurcatedChatTab } from "@/components/admin/BifurcatedChatTab";
@@ -29,8 +30,12 @@ import { SettingsGatewayTab } from "@/components/admin/SettingsGatewayTab";
 import { AuditTab } from "@/components/admin/AuditTab";
 import { LogoutButton } from "@/components/admin/LogoutButton";
 import { BcvRateModal } from "@/components/admin/BcvRateModal";
+import { AdminProfilePanel } from "@/components/admin/AdminProfilePanel";
 import { Toast, ToastProps } from "@/components/ui/Toast";
 import { obtenerConfiguracionTienda } from "@/actions/config";
+import { createClient } from "@/lib/supabase/client";
+
+
 
 type AdminTabId =
   | "centro_mando"
@@ -57,7 +62,8 @@ export default function UnifiedAdminMasterSPA() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isBcvModalOpen, setIsBcvModalOpen] = useState(false);
   const [chatTargetOrdenId, setChatTargetOrdenId] = useState<string | null>(null);
-  const [operadorAlias, setOperadorAlias] = useState<string>("@carlos_admin");
+  const [operadorAlias, setOperadorAlias] = useState<string>("@operador");
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -73,6 +79,28 @@ export default function UnifiedAdminMasterSPA() {
         const num = parseFloat(String(conf.tasa_bcv));
         if (!isNaN(num) && num > 0) setTasaBcv(num);
       }
+    });
+
+    // Cargar alias real del admin autenticado
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      const userId = data?.user?.id;
+      if (!userId) return;
+      (supabase as any)
+        .from("perfiles_admin")
+        .select("alias, nombre")
+        .eq("id", userId)
+        .maybeSingle()
+        .then(({ data: perfil }: { data: any }) => {
+          if (perfil?.alias) setOperadorAlias(perfil.alias);
+          else if (perfil?.nombre) setOperadorAlias(`@${perfil.nombre.split(" ")[0].toLowerCase()}`);
+        });
+      // Heartbeat de presencia
+      (supabase as any)
+        .from("perfiles_admin")
+        .update({ en_linea: true, ultima_conexion: new Date().toISOString() })
+        .eq("id", userId)
+        .then(() => {});
     });
   }, []);
 
@@ -120,6 +148,13 @@ export default function UnifiedAdminMasterSPA() {
           showToast={showToast}
         />
       )}
+
+      {/* Panel de Perfil Admin */}
+      <AdminProfilePanel
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        showToast={showToast}
+      />
 
       {/* ── SIDEBAR ── */}
       {isSidebarOpen && (
@@ -186,13 +221,19 @@ export default function UnifiedAdminMasterSPA() {
         {/* Footer sidebar */}
         <div className="p-4 border-t border-slate-800 bg-[#070D18] space-y-3 shrink-0">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <div>
-                <span className="text-xs font-mono font-bold text-white block">{operadorAlias}</span>
-                <span className="text-[10px] text-slate-500 block">En Línea · Vendedor</span>
+            <button
+              type="button"
+              onClick={() => setIsProfileOpen(true)}
+              className="flex items-center gap-2 hover:bg-slate-800 rounded-xl px-2 py-1 transition-colors flex-1 min-w-0"
+              title="Ver mi perfil"
+            >
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <div className="min-w-0">
+                <span className="text-xs font-mono font-bold text-white block truncate">{operadorAlias}</span>
+                <span className="text-[10px] text-slate-500 block">En Línea · Admin</span>
               </div>
-            </div>
+              <User className="w-3.5 h-3.5 text-slate-500 shrink-0 ml-auto" />
+            </button>
             <LogoutButton />
           </div>
           <div className="pt-2 border-t border-slate-800/60">
